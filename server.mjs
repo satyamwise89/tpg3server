@@ -238,20 +238,20 @@ res.json({status:"ok"});
 
 app.post("/test",(req,res)=>{
 
-const {horse,raceTime}=req.body;
+const {horse,raceTime,pnl}=req.body;
 
 if(!raceStore[raceTime]){
 raceStore[raceTime]={};
 }
 
-/* fake TP data for testing */
+/* insert test data */
 
 raceStore[raceTime]["tp"]={
 
 horses:[
 {
 name:horse,
-pnl:999
+pnl: Number(pnl) || 0
 }
 ]
 
@@ -278,9 +278,10 @@ res.json({
 
 horse,
 raceTime,
+pnl,
 winner,
 scrapedWinner:result?.winner || null,
-message:"Test horse inserted into comparison"
+message:"Test data inserted"
 
 });
 
