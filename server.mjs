@@ -11,8 +11,8 @@ app.use(cors());
 /* ---------- MEMORY ---------- */
 
 let raceStore = {};
-let lastScrapedData = {};
-let mergedReport = [];
+let scrapedResults = {};
+let finalReport = {};
 
 /* ---------- SCRAPER ---------- */
 
@@ -26,11 +26,11 @@ const res = await axios.get(url);
 
 const $ = cheerio.load(res.data);
 
-let races = {};
+let results={};
 
 $("div[id^='race-']").each((i,r)=>{
 
-const raceNo = $(r).attr("id").replace("race-","");
+const raceTime=$(r).find(".raceTime").text().trim();
 
 let winner="";
 let withdrawn=[];
@@ -51,11 +51,16 @@ withdrawn.push(horse);
 
 });
 
-races[raceNo]={winner,withdrawn};
+if(raceTime){
+results[raceTime]={
+winner,
+withdrawn
+};
+}
 
 });
 
-lastScrapedData = races;
+scrapedResults=results;
 
 }catch(e){
 
@@ -65,36 +70,34 @@ console.log("SCRAPE ERROR",e);
 
 }
 
-/* ---------- AUTO SCRAPER ---------- */
+/* ---------- AUTO SCRAPE ---------- */
 
 setInterval(async()=>{
 
 await scrapeResults();
 
-updateReport();
-
-console.log("SCRAPER UPDATED");
+buildReports();
 
 },10000);
 
-/* ---------- MERGE TP + G3 ---------- */
+/* ---------- BUILD REPORT ---------- */
 
-function updateReport(){
+function buildReports(){
 
 Object.keys(raceStore).forEach(raceTime=>{
 
-const tp = raceStore[raceTime]?.tp;
-const g3 = raceStore[raceTime]?.g3;
+const tp=raceStore[raceTime]?.tp;
+const g3=raceStore[raceTime]?.g3;
 
 if(!tp && !g3) return;
 
-let merged = {};
+let merged={};
 
 if(tp){
 
 tp.horses.forEach(h=>{
 
-merged[h.name] = {
+merged[h.name]={
 tpPnl:h.pnl,
 g3Pnl:0
 };
@@ -124,33 +127,33 @@ Object.keys(merged).forEach(name=>{
 let winner=false;
 let withdrawn=false;
 
-Object.values(lastScrapedData).forEach(r=>{
+const r=scrapedResults[raceTime];
+
+if(r){
 
 if(r.winner===name) winner=true;
 
 if(r.withdrawn.includes(name)) withdrawn=true;
 
-});
+}
 
 report.push({
-
 horse:name,
 tpPnl:merged[name].tpPnl,
 g3Pnl:merged[name].g3Pnl,
 winner,
 withdrawn
-
 });
 
 });
 
-mergedReport = report;
+finalReport[raceTime]=report;
 
 });
 
 }
 
-/* ---------- RECEIVE BROWSER DATA ---------- */
+/* ---------- RECEIVE DATA ---------- */
 
 app.post("/race-data",(req,res)=>{
 
@@ -165,9 +168,9 @@ soda,
 horses
 };
 
-console.log("DATA RECEIVED:",panel);
+console.log("DATA RECEIVED:",raceTime,panel);
 
-updateReport();
+buildReports();
 
 res.json({status:"ok"});
 
@@ -177,75 +180,40 @@ res.json({status:"ok"});
 
 app.get("/dashboard",(req,res)=>{
 
-res.send(`
-<html>
-<head>
-<title>Race Server</title>
+let html=`<h2>Race Comparison Dashboard</h2>`;
 
-<style>
+Object.keys(finalReport).forEach(time=>{
 
-body{
-font-family:Arial;
-padding:20px;
-background:#f5f5f5;
-}
+html+=`<h3>Race ${time}</h3>`;
 
-table{
-border-collapse:collapse;
-background:white;
-}
-
-td,th{
-border:1px solid #ccc;
-padding:6px 10px;
-}
-
-.winner{
-background:#8ef58e;
-}
-
-.withdrawn{
-background:#ffb6c1;
-}
-
-</style>
-
-</head>
-
-<body>
-
-<h2>Scraped Results</h2>
-<pre>${JSON.stringify(lastScrapedData,null,2)}</pre>
-
-<h2>Merged TP + G3 Report</h2>
-
-<table>
-
+html+=`
+<table border="1" style="border-collapse:collapse">
 <tr>
 <th>Horse</th>
 <th>TP PNL</th>
 <th>G3 PNL</th>
 <th>Status</th>
 </tr>
+`;
 
-${mergedReport.map(r=>{
-
-let cls="";
+finalReport[time].forEach(r=>{
 
 let status="";
 
+let color="";
+
 if(r.winner){
-cls="winner";
 status="WINNER";
+color="lightgreen";
 }
 
 if(r.withdrawn){
-cls="withdrawn";
 status="WITHDRAWN";
+color="pink";
 }
 
-return `
-<tr class="${cls}">
+html+=`
+<tr style="background:${color}">
 <td>${r.horse}</td>
 <td>${r.tpPnl}</td>
 <td>${r.g3Pnl}</td>
@@ -253,13 +221,13 @@ return `
 </tr>
 `;
 
-}).join("")}
+});
 
-</table>
+html+=`</table><br>`;
 
-</body>
-</html>
-`);
+});
+
+res.send(html);
 
 });
 
@@ -267,42 +235,6 @@ return `
 
 app.listen(3000,()=>{
 
-console.log("================================");
-console.log("TP + G3 MERGE SERVER RUNNING");
-console.log("https://tpg3server.onrender.com/dashboard");
-console.log("================================");
-
-});
-
-
-
-/* ---------- TEST HORSE ---------- */
-
-app.post("/test-horse",(req,res)=>{
-
-const {horse}=req.body;
-
-console.log("TEST HORSE RECEIVED:",horse);
-
-let winner=false;
-let withdrawn=false;
-
-Object.values(lastScrapedData).forEach(r=>{
-
-if(r.winner===horse) winner=true;
-
-if(r.withdrawn.includes(horse)) withdrawn=true;
-
-});
-
-const result={
-horse,
-winner,
-withdrawn
-};
-
-console.log("TEST RESULT:",result);
-
-res.json(result);
+console.log("TP + G3 TIME MATCH SERVER RUNNING");
 
 });
