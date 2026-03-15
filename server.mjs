@@ -42,6 +42,9 @@ let lastScrapeTime = "";
 let detectedVenuesLog = [];
 let scrapeUrlsLog = [];
 
+let activeVenues = [];
+let lastVenueUpdate = "";
+
 /* ---------- DATE (INDIAN) ---------- */
 
 function todayDate(){
@@ -129,7 +132,7 @@ async function detectVenues(){
 
 try{
 
-const res=await axios.get("https://www.indiarace.com/");
+const res=await axios.get("https://www.indiarace.com/",{timeout:10000});
 const html=res.data.toLowerCase();
 
 let found=[];
@@ -147,7 +150,7 @@ id:VENUES[v]
 
 }
 
-detectedVenuesLog = found;
+detectedVenuesLog=found;
 
 console.log("VENUES DETECTED:",found);
 
@@ -163,13 +166,42 @@ return [];
 
 }
 
+/* ---------- UPDATE ACTIVE VENUES ---------- */
+
+async function updateVenues(){
+
+try{
+
+const venues=await detectVenues();
+
+activeVenues=venues;
+
+lastVenueUpdate=indiaTime();
+
+console.log("ACTIVE VENUES UPDATED:",activeVenues);
+
+}catch(e){
+
+console.log("VENUE UPDATE ERROR",e);
+
+}
+
+}
+
 /* ---------- SCRAPE RESULTS ---------- */
 
 async function scrapeResults(){
 
 try{
 
-const venues=await detectVenues();
+const venues=activeVenues;
+
+if(!venues.length){
+
+console.log("NO VENUES DETECTED YET");
+return;
+
+}
 
 const date=todayDate();
 
@@ -185,9 +217,9 @@ scrapeUrlsLog.push(url);
 
 console.log("SCRAPING:",url);
 
-const res = await axios.get(url);
+const res=await axios.get(url,{timeout:10000});
 
-const $ = cheerio.load(res.data);
+const $=cheerio.load(res.data);
 
 $("div[id^='race-']").each((i,r)=>{
 
@@ -256,7 +288,8 @@ console.log("SCRAPE ERROR:",e);
 
 /* ---------- AUTO SCRAPE ---------- */
 
-setInterval(scrapeResults,10000);
+setInterval(updateVenues,600000);   // 10 min
+setInterval(scrapeResults,120000);  // 2 min
 
 /* ---------- BUILD COMPARISON ---------- */
 
@@ -432,21 +465,20 @@ let html=`
 
 <p>Last Scrape: ${lastScrapeTime}</p>
 
+<p>Last Venue Update: ${lastVenueUpdate}</p>
+
 <meta http-equiv="refresh" content="5">
 
 <table border="1">
 
 <tr>
-
 <th>Race Time</th>
 <th>Horse</th>
 <th>TP Soda</th>
 <th>G3 Soda</th>
 <th>TP PNL</th>
 <th>G3 PNL</th>
-
 </tr>
-
 `;
 
 Object.keys(winnerReport).forEach(time=>{
@@ -461,23 +493,18 @@ const g3Soda=raceStore[time]?.g3?.soda||0;
 html+=`
 
 <tr style="background:lightgreen">
-
 <td>${time}</td>
 <td>${w.horse}</td>
 <td>${tpSoda}</td>
 <td>${g3Soda}</td>
 <td>${w.tpPnl}</td>
 <td>${w.g3Pnl}</td>
-
 </tr>
-
 `;
 
 });
 
-html+=`</table>`;
-
-/* ---------- DEBUG ---------- */
+html+="</table>";
 
 html+=`
 
@@ -487,6 +514,9 @@ html+=`
 
 <h3>Detected Venues</h3>
 <pre>${JSON.stringify(detectedVenuesLog,null,2)}</pre>
+
+<h3>Active Venues</h3>
+<pre>${JSON.stringify(activeVenues,null,2)}</pre>
 
 <h3>Scraping URLs</h3>
 <pre>${JSON.stringify(scrapeUrlsLog,null,2)}</pre>
@@ -511,10 +541,8 @@ res.send(html);
 app.get("/",(req,res)=>{
 
 res.send(`
-
 <h2>TP + G3 Server Running</h2>
 <a href="/dashboard">Open Dashboard</a>
-
 `);
 
 });
@@ -526,6 +554,8 @@ const PORT=process.env.PORT || 3000;
 async function startServer(){
 
 await initDatabase();
+
+await updateVenues();
 
 await scrapeResults();
 
