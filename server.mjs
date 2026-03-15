@@ -111,7 +111,6 @@ console.log("SCRAPE ERROR:",e);
 setInterval(async()=>{
 
 await scrapeResults();
-
 buildComparison();
 
 },10000);
@@ -200,7 +199,6 @@ g3Pnl:merged[wn].g3
 }
 
 winnerReport[time]=winnerData;
-
 compareLog[time]=merged;
 
 });
@@ -290,13 +288,13 @@ scrapedWinner:result?.winner||null
 
 });
 
-/* ---------- DASHBOARD (SINGLE TABLE) ---------- */
+/* ---------- DASHBOARD (ONLY MATCHED WINNERS) ---------- */
 
 app.get("/dashboard",(req,res)=>{
 
 let html=`
 
-<h1>TP + G3 Race Dashboard</h1>
+<h1>TP + G3 Winner Dashboard</h1>
 
 <p>Last Scrape: ${lastScrapeTime}</p>
 
@@ -307,7 +305,6 @@ let html=`
 <tr style="background:#ddd">
 
 <th>Race Time</th>
-<th>Sr No.</th>
 <th>Horse Name</th>
 <th>TP Soda</th>
 <th>G3 Soda</th>
@@ -319,57 +316,63 @@ let html=`
 
 `;
 
-Object.keys(compareLog).forEach(time=>{
+Object.keys(winnerReport).forEach(time=>{
 
-const horses=compareLog[time];
-const winner=winnerReport[time]?.horse;
+const winner=winnerReport[time];
 
-const tpSoda=raceStore[time]?.tp?.soda||0;
-const g3Soda=raceStore[time]?.g3?.soda||0;
+if(!winner) return;
 
-const withdrawnList=scrapedResults[time]?.withdrawn||[];
+const tpSoda=raceStore[time]?.tp?.soda || 0;
+const g3Soda=raceStore[time]?.g3?.soda || 0;
 
-let i=1;
+const withdrawnList=scrapedResults[time]?.withdrawn || [];
 
-Object.values(horses).forEach(h=>{
-
-const isWithdrawn=withdrawnList.some(w=>
-normalizeHorse(w)===normalizeHorse(h.horse)
+const isWithdrawn = withdrawnList.some(w =>
+normalizeHorse(w) === normalizeHorse(winner.horse)
 );
 
-let rowStyle="";
-
-if(isWithdrawn){
-rowStyle="style='background:pink'";
-}
-else if(winner && normalizeHorse(h.horse)===normalizeHorse(winner)){
-rowStyle="style='background:lightgreen;font-weight:bold'";
-}
+const rowStyle=isWithdrawn
+?"style='background:pink'"
+:"style='background:lightgreen;font-weight:bold'";
 
 html+=`
 
 <tr ${rowStyle}>
 
 <td>${time}</td>
-<td>${i}</td>
-<td>${h.horse}</td>
+<td>${winner.horse}</td>
 <td>${tpSoda}</td>
 <td>${g3Soda}</td>
-<td>${h.tp}</td>
-<td>${h.g3}</td>
-<td>${isWithdrawn?"YES":""}</td>
+<td>${winner.tpPnl}</td>
+<td>${winner.g3Pnl}</td>
+<td>${isWithdrawn ? "YES" : ""}</td>
 
 </tr>
 
 `;
 
-i++;
-
-});
-
 });
 
 html+=`</table>`;
+
+/* ---------- DEBUG ---------- */
+
+html+=`
+
+<hr>
+
+<h2>Debug Section</h2>
+
+<h3>Browser Data</h3>
+<pre>${JSON.stringify(browserLog,null,2)}</pre>
+
+<h3>Scraped Data</h3>
+<pre>${JSON.stringify(scrapedResults,null,2)}</pre>
+
+<h3>Comparison Data</h3>
+<pre>${JSON.stringify(compareLog,null,2)}</pre>
+
+`;
 
 res.send(html);
 
@@ -391,7 +394,7 @@ res.send(`
 
 /* ---------- SERVER ---------- */
 
-const PORT=process.env.PORT||3000;
+const PORT=process.env.PORT || 3000;
 
 app.listen(PORT,()=>{
 
