@@ -132,14 +132,21 @@ async function detectVenues(){
 
 try{
 
-const res=await axios.get("https://www.indiarace.com/",{timeout:10000});
-const html=res.data.toLowerCase();
+const res = await axios.get("https://www.indiarace.com/",{timeout:10000});
 
-let found=[];
+const $ = cheerio.load(res.data);
+
+let found = [];
+
+/* Only detect venue from Live Center marquee */
+
+$(".marquee_inner_div .marquees a").each((i,el)=>{
+
+const text = $(el).text().toLowerCase();
 
 for(const v in VENUES){
 
-if(html.includes(v)){
+if(text.includes(v)){
 
 found.push({
 name:v,
@@ -150,7 +157,15 @@ id:VENUES[v]
 
 }
 
-detectedVenuesLog=found;
+});
+
+/* remove duplicates */
+
+found = found.filter(
+(v,i,self)=> i === self.findIndex(t => t.id === v.id)
+);
+
+detectedVenuesLog = found;
 
 console.log("VENUES DETECTED:",found);
 
@@ -309,11 +324,9 @@ tp.horses.forEach(h=>{
 const n=normalizeHorse(h.name);
 
 merged[n]={
-
 horse:h.name,
 tp:h.pnl,
 g3:0
-
 };
 
 });
@@ -327,19 +340,9 @@ g3.horses.forEach(h=>{
 const n=normalizeHorse(h.name);
 
 if(!merged[n]){
-
-merged[n]={
-
-horse:h.name,
-tp:0,
-g3:h.pnl
-
-};
-
+merged[n]={horse:h.name,tp:0,g3:h.pnl};
 }else{
-
 merged[n].g3=h.pnl;
-
 }
 
 });
@@ -357,11 +360,9 @@ const wn=normalizeHorse(winnerHorse);
 if(merged[wn]){
 
 winnerData={
-
 horse:winnerHorse,
 tpPnl:merged[wn].tp,
 g3Pnl:merged[wn].g3
-
 };
 
 }
@@ -388,10 +389,7 @@ raceStore[raceTime]={};
 }
 
 if(!raceStore[raceTime][panel]){
-raceStore[raceTime][panel]={
-soda:0,
-horses:[]
-};
+raceStore[raceTime][panel]={soda:0,horses:[]};
 }
 
 raceStore[raceTime][panel].soda=soda;
@@ -400,8 +398,8 @@ horses.forEach(newHorse=>{
 
 const n=normalizeHorse(newHorse.name);
 
-const existing=raceStore[raceTime][panel].horses.find(h=>
-normalizeHorse(h.name)===n
+const existing=raceStore[raceTime][panel].horses.find(
+h=>normalizeHorse(h.name)===n
 );
 
 if(existing){
@@ -539,12 +537,10 @@ res.send(html);
 /* ---------- HOME ---------- */
 
 app.get("/",(req,res)=>{
-
 res.send(`
 <h2>TP + G3 Server Running</h2>
 <a href="/dashboard">Open Dashboard</a>
 `);
-
 });
 
 /* ---------- SERVER ---------- */
