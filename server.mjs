@@ -39,6 +39,9 @@ let browserLog = {};
 let compareLog = {};
 let lastScrapeTime = "";
 
+let detectedVenuesLog = [];
+let scrapeUrlsLog = [];
+
 /* ---------- DATE (INDIAN) ---------- */
 
 function todayDate(){
@@ -144,6 +147,8 @@ id:VENUES[v]
 
 }
 
+detectedVenuesLog = found;
+
 console.log("VENUES DETECTED:",found);
 
 return found;
@@ -170,9 +175,13 @@ const date=todayDate();
 
 let results={};
 
+scrapeUrlsLog=[];
+
 for(const v of venues){
 
 const url=`https://www.indiarace.com/Home/racingCenterEvent?venueId=${v.id}&event_date=${date}&race_type=RESULTS`;
+
+scrapeUrlsLog.push(url);
 
 console.log("SCRAPING:",url);
 
@@ -260,8 +269,6 @@ const g3=raceStore[time]?.g3;
 
 let merged={};
 
-/* ---------- TP ---------- */
-
 if(tp){
 
 tp.horses.forEach(h=>{
@@ -279,8 +286,6 @@ g3:0
 });
 
 }
-
-/* ---------- G3 ---------- */
 
 if(g3){
 
@@ -307,8 +312,6 @@ merged[n].g3=h.pnl;
 });
 
 }
-
-/* ---------- WINNER ---------- */
 
 let winnerHorse=scrapedResults[time]?.winner;
 
@@ -369,18 +372,12 @@ normalizeHorse(h.name)===n
 );
 
 if(existing){
-
 existing.pnl=newHorse.pnl;
-
 }else{
-
 raceStore[raceTime][panel].horses.push(newHorse);
-
 }
 
 });
-
-/* ---------- SAVE RACE ---------- */
 
 await pool.query(
 
@@ -392,8 +389,6 @@ DO UPDATE SET soda=$4`,
 [today,raceTime,panel,soda]
 
 );
-
-/* ---------- SAVE HORSES ---------- */
 
 for(const h of horses){
 
@@ -480,7 +475,32 @@ html+=`
 
 });
 
-html+="</table>";
+html+=`</table>`;
+
+/* ---------- DEBUG ---------- */
+
+html+=`
+
+<hr>
+
+<h2>SCRAPER DEBUG</h2>
+
+<h3>Detected Venues</h3>
+<pre>${JSON.stringify(detectedVenuesLog,null,2)}</pre>
+
+<h3>Scraping URLs</h3>
+<pre>${JSON.stringify(scrapeUrlsLog,null,2)}</pre>
+
+<h3>Scraped Results</h3>
+<pre>${JSON.stringify(scrapedResults,null,2)}</pre>
+
+<h3>Browser Data</h3>
+<pre>${JSON.stringify(browserLog,null,2)}</pre>
+
+<h3>Comparison Data</h3>
+<pre>${JSON.stringify(compareLog,null,2)}</pre>
+
+`;
 
 res.send(html);
 
@@ -506,8 +526,6 @@ const PORT=process.env.PORT || 3000;
 async function startServer(){
 
 await initDatabase();
-
-/* first scrape immediately */
 
 await scrapeResults();
 
