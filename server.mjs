@@ -39,17 +39,29 @@ let browserLog = {};
 let compareLog = {};
 let lastScrapeTime = "";
 
-/* ---------- DATE ---------- */
+/* ---------- DATE (INDIAN) ---------- */
 
 function todayDate(){
 
-const d=new Date();
+const d=new Date(
+new Date().toLocaleString("en-US",{timeZone:"Asia/Kolkata"})
+);
 
 const yyyy=d.getFullYear();
 const mm=String(d.getMonth()+1).padStart(2,"0");
 const dd=String(d.getDate()).padStart(2,"0");
 
 return `${yyyy}-${mm}-${dd}`;
+
+}
+
+/* ---------- INDIA TIME ---------- */
+
+function indiaTime(){
+
+return new Date().toLocaleTimeString("en-IN",{
+timeZone:"Asia/Kolkata"
+});
 
 }
 
@@ -219,7 +231,7 @@ venue:v.name
 
 scrapedResults=results;
 
-lastScrapeTime=new Date().toLocaleTimeString();
+lastScrapeTime=indiaTime();
 
 console.log("SCRAPED RESULTS:",results);
 
@@ -494,6 +506,10 @@ const PORT=process.env.PORT || 3000;
 async function startServer(){
 
 await initDatabase();
+
+/* first scrape immediately */
+
+await scrapeResults();
 
 app.listen(PORT,()=>{
 
