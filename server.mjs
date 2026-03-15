@@ -8,13 +8,17 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-let lastBrowserData = {};
+/* ---------- MEMORY ---------- */
+
+let raceStore = {};
 let lastScrapedData = {};
-let lastReport = [];
+let mergedReport = [];
 
 /* ---------- SCRAPER ---------- */
 
 async function scrapeResults(){
+
+try{
 
 const url="https://www.indiarace.com/Home/racingCenterEvent?venueId=1&event_date=2026-03-12&race_type=RESULTS";
 
@@ -53,59 +57,117 @@ races[raceNo]={winner,withdrawn};
 
 lastScrapedData = races;
 
-return races;
+}catch(e){
+
+console.log("SCRAPE ERROR",e);
 
 }
 
-/* ---------- API ---------- */
+}
 
-app.post("/race-data", async(req,res)=>{
+/* ---------- AUTO SCRAPER ---------- */
 
-const {panel,raceTime,soda,horses}=req.body;
+setInterval(async()=>{
 
-lastBrowserData = {
-panel,
-raceTime,
-soda,
-horses
+await scrapeResults();
+
+updateReport();
+
+console.log("SCRAPER UPDATED");
+
+},10000);
+
+/* ---------- MERGE TP + G3 ---------- */
+
+function updateReport(){
+
+Object.keys(raceStore).forEach(raceTime=>{
+
+const tp = raceStore[raceTime]?.tp;
+const g3 = raceStore[raceTime]?.g3;
+
+if(!tp && !g3) return;
+
+let merged = {};
+
+if(tp){
+
+tp.horses.forEach(h=>{
+
+merged[h.name] = {
+tpPnl:h.pnl,
+g3Pnl:0
 };
 
-const results = await scrapeResults();
+});
+
+}
+
+if(g3){
+
+g3.horses.forEach(h=>{
+
+if(!merged[h.name]){
+merged[h.name]={tpPnl:0,g3Pnl:h.pnl};
+}else{
+merged[h.name].g3Pnl=h.pnl;
+}
+
+});
+
+}
 
 let report=[];
 
-horses.forEach(h=>{
+Object.keys(merged).forEach(name=>{
 
-let isWinner=false;
-let isWithdrawn=false;
+let winner=false;
+let withdrawn=false;
 
-Object.values(results).forEach(r=>{
+Object.values(lastScrapedData).forEach(r=>{
 
-if(r.winner===h.name) isWinner=true;
+if(r.winner===name) winner=true;
 
-if(r.withdrawn.includes(h.name)) isWithdrawn=true;
+if(r.withdrawn.includes(name)) withdrawn=true;
 
 });
 
 report.push({
-horse:h.name,
-pnl:h.pnl,
-winner:isWinner,
-withdrawn:isWithdrawn
-});
+
+horse:name,
+tpPnl:merged[name].tpPnl,
+g3Pnl:merged[name].g3Pnl,
+winner,
+withdrawn
 
 });
 
-lastReport = report;
+});
 
-console.log("DATA RECEIVED FROM BROWSER");
-console.log(lastBrowserData);
+mergedReport = report;
 
-console.log("SCRAPED RESULTS");
-console.log(lastScrapedData);
+});
 
-console.log("FINAL REPORT");
-console.log(lastReport);
+}
+
+/* ---------- RECEIVE BROWSER DATA ---------- */
+
+app.post("/race-data",(req,res)=>{
+
+const {panel,raceTime,soda,horses}=req.body;
+
+if(!raceStore[raceTime]){
+raceStore[raceTime]={};
+}
+
+raceStore[raceTime][panel]={
+soda,
+horses
+};
+
+console.log("DATA RECEIVED:",panel);
+
+updateReport();
 
 res.json({status:"ok"});
 
@@ -118,7 +180,8 @@ app.get("/dashboard",(req,res)=>{
 res.send(`
 <html>
 <head>
-<title>Race Debug Dashboard</title>
+<title>Race Server</title>
+
 <style>
 
 body{
@@ -127,32 +190,72 @@ padding:20px;
 background:#f5f5f5;
 }
 
-pre{
+table{
+border-collapse:collapse;
 background:white;
-padding:15px;
-border-radius:6px;
-overflow:auto;
 }
 
-h2{
-margin-top:40px;
+td,th{
+border:1px solid #ccc;
+padding:6px 10px;
+}
+
+.winner{
+background:#8ef58e;
+}
+
+.withdrawn{
+background:#ffb6c1;
 }
 
 </style>
+
 </head>
 
 <body>
 
-<h1>Race Debug Dashboard</h1>
-
-<h2>Browser Data</h2>
-<pre>${JSON.stringify(lastBrowserData,null,2)}</pre>
-
-<h2>Scraped IndiaRace Results</h2>
+<h2>Scraped Results</h2>
 <pre>${JSON.stringify(lastScrapedData,null,2)}</pre>
 
-<h2>Comparison Report</h2>
-<pre>${JSON.stringify(lastReport,null,2)}</pre>
+<h2>Merged TP + G3 Report</h2>
+
+<table>
+
+<tr>
+<th>Horse</th>
+<th>TP PNL</th>
+<th>G3 PNL</th>
+<th>Status</th>
+</tr>
+
+${mergedReport.map(r=>{
+
+let cls="";
+
+let status="";
+
+if(r.winner){
+cls="winner";
+status="WINNER";
+}
+
+if(r.withdrawn){
+cls="withdrawn";
+status="WITHDRAWN";
+}
+
+return `
+<tr class="${cls}">
+<td>${r.horse}</td>
+<td>${r.tpPnl}</td>
+<td>${r.g3Pnl}</td>
+<td>${status}</td>
+</tr>
+`;
+
+}).join("")}
+
+</table>
 
 </body>
 </html>
@@ -165,8 +268,8 @@ margin-top:40px;
 app.listen(3000,()=>{
 
 console.log("================================");
-console.log("RACE DEBUG SERVER RUNNING");
-console.log("http://localhost:3000/dashboard");
+console.log("TP + G3 MERGE SERVER RUNNING");
+console.log("https://tpg3server.onrender.com/dashboard");
 console.log("================================");
 
 });
