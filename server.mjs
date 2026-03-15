@@ -234,11 +234,30 @@ res.json({status:"ok"});
 
 });
 
-/* ---------- TEST MODE ---------- */
+/* ---------- TEST MODE (NOW ADDS DATA INTO COMPARISON) ---------- */
 
 app.post("/test",(req,res)=>{
 
 const {horse,raceTime}=req.body;
+
+if(!raceStore[raceTime]){
+raceStore[raceTime]={};
+}
+
+/* fake TP data for testing */
+
+raceStore[raceTime]["tp"]={
+
+horses:[
+{
+name:horse,
+pnl:999
+}
+]
+
+};
+
+buildComparison();
 
 const result=scrapedResults[raceTime];
 
@@ -260,7 +279,8 @@ res.json({
 horse,
 raceTime,
 winner,
-scrapedWinner:result?.winner || null
+scrapedWinner:result?.winner || null,
+message:"Test horse inserted into comparison"
 
 });
 
