@@ -7,7 +7,6 @@ import pkg from "pg";
 const { Pool } = pkg;
 
 const app = express();
-
 app.use(express.json());
 app.use(cors());
 
@@ -24,12 +23,12 @@ let raceStore = {};
 let scrapedResults = {};
 let winnerReport = {};
 let compareLog = {};
+let browserLog = {};
 let lastScrapeTime = "";
 
-/* ---------- NORMALIZER ---------- */
+/* ---------- HORSE NORMALIZER ---------- */
 
 function normalizeHorse(name){
-
 if(!name) return "";
 
 return name
@@ -38,6 +37,35 @@ return name
 .replace(/[^a-z0-9 ]/g,"")
 .replace(/\s+/g," ")
 .trim();
+}
+
+/* ---------- DB INIT ---------- */
+
+async function initDatabase(){
+
+await pool.query(`
+CREATE TABLE IF NOT EXISTS races (
+id SERIAL PRIMARY KEY,
+date TEXT,
+race_time TEXT,
+panel TEXT,
+soda INTEGER,
+UNIQUE(date,race_time,panel)
+);
+`);
+
+await pool.query(`
+CREATE TABLE IF NOT EXISTS horses (
+id SERIAL PRIMARY KEY,
+race_time TEXT,
+horse TEXT,
+tp_pnl INTEGER DEFAULT 0,
+g3_pnl INTEGER DEFAULT 0,
+UNIQUE(race_time,horse)
+);
+`);
+
+console.log("DATABASE READY");
 
 }
 
@@ -89,9 +117,7 @@ withdrawn.push(horse);
 });
 
 if(raceTime){
-
 results[raceTime]={winner,withdrawn};
-
 }
 
 });
@@ -104,7 +130,7 @@ buildComparison();
 
 }catch(e){
 
-console.log("SCRAPE ERROR:",e);
+console.log("SCRAPER ERROR",e);
 
 }
 
@@ -114,7 +140,7 @@ console.log("SCRAPE ERROR:",e);
 
 setInterval(scrapeResults,10000);
 
-/* ---------- COMPARISON ---------- */
+/* ---------- BUILD COMPARISON ---------- */
 
 function buildComparison(){
 
@@ -125,17 +151,27 @@ const g3=raceStore[time]?.g3;
 
 let merged={};
 
+/* TP */
+
 if(tp){
 
 tp.horses.forEach(h=>{
 
 const n=normalizeHorse(h.name);
 
-merged[n]={horse:h.name,tp:h.pnl,g3:0};
+merged[n]={
+
+horse:h.name,
+tp:h.pnl,
+g3:0
+
+};
 
 });
 
 }
+
+/* G3 */
 
 if(g3){
 
@@ -145,7 +181,13 @@ const n=normalizeHorse(h.name);
 
 if(!merged[n]){
 
-merged[n]={horse:h.name,tp:0,g3:h.pnl};
+merged[n]={
+
+horse:h.name,
+tp:0,
+g3:h.pnl
+
+};
 
 }else{
 
@@ -157,7 +199,11 @@ merged[n].g3=h.pnl;
 
 }
 
+/* WINNER */
+
 let winnerHorse=scrapedResults[time]?.winner;
+
+let winnerData=null;
 
 if(winnerHorse){
 
@@ -165,7 +211,7 @@ const wn=normalizeHorse(winnerHorse);
 
 if(merged[wn]){
 
-winnerReport[time]={
+winnerData={
 
 horse:winnerHorse,
 tpPnl:merged[wn].tp,
@@ -177,6 +223,7 @@ g3Pnl:merged[wn].g3
 
 }
 
+winnerReport[time]=winnerData;
 compareLog[time]=merged;
 
 });
@@ -185,7 +232,7 @@ compareLog[time]=merged;
 
 /* ---------- RECEIVE BROWSER DATA ---------- */
 
-app.post("/race-data",async(req,res)=>{
+app.post("/race-data", async(req,res)=>{
 
 const {panel,raceTime,soda,horses}=req.body;
 
@@ -195,11 +242,20 @@ if(!raceStore[raceTime]) raceStore[raceTime]={};
 
 if(!raceStore[raceTime][panel]){
 
-raceStore[raceTime][panel]={soda:0,horses:[]};
+raceStore[raceTime][panel]={
+
+soda:0,
+horses:[]
+
+};
 
 }
 
+/* update soda */
+
 raceStore[raceTime][panel].soda=soda;
+
+/* merge horses */
 
 horses.forEach(h=>{
 
@@ -243,7 +299,9 @@ await pool.query(
 `INSERT INTO horses(race_time,horse,tp_pnl,g3_pnl)
 VALUES($1,$2,$3,$4)
 ON CONFLICT (race_time,horse)
-DO UPDATE SET tp_pnl=$3,g3_pnl=$4`,
+DO UPDATE SET
+tp_pnl = CASE WHEN $3>0 THEN $3 ELSE horses.tp_pnl END,
+g3_pnl = CASE WHEN $4>0 THEN $4 ELSE horses.g3_pnl END`,
 
 [
 raceTime,
@@ -255,6 +313,8 @@ panel==="g3"?h.pnl:0
 );
 
 }
+
+browserLog[raceTime]=req.body;
 
 buildComparison();
 
@@ -280,6 +340,8 @@ let html=`
 
 <th>Race Time</th>
 <th>Horse</th>
+<th>TP Soda</th>
+<th>G3 Soda</th>
 <th>TP PNL</th>
 <th>G3 PNL</th>
 
@@ -291,12 +353,19 @@ Object.keys(winnerReport).forEach(time=>{
 
 const w=winnerReport[time];
 
+if(!w) return;
+
+const tpSoda=raceStore[time]?.tp?.soda||0;
+const g3Soda=raceStore[time]?.g3?.soda||0;
+
 html+=`
 
 <tr style="background:lightgreen">
 
 <td>${time}</td>
 <td>${w.horse}</td>
+<td>${tpSoda}</td>
+<td>${g3Soda}</td>
 <td>${w.tpPnl}</td>
 <td>${w.g3Pnl}</td>
 
@@ -308,16 +377,60 @@ html+=`
 
 html+="</table>";
 
+/* DEBUG */
+
+html+=`
+
+<hr>
+
+<h3>Debug</h3>
+
+<h4>Browser Data</h4>
+<pre>${JSON.stringify(browserLog,null,2)}</pre>
+
+<h4>Scraped</h4>
+<pre>${JSON.stringify(scrapedResults,null,2)}</pre>
+
+<h4>Compare</h4>
+<pre>${JSON.stringify(compareLog,null,2)}</pre>
+
+`;
+
 res.send(html);
 
 });
 
-/* ---------- SERVER ---------- */
+/* ---------- HOME ---------- */
+
+app.get("/",(req,res)=>{
+
+res.send(`
+
+<h2>TP + G3 Server Running</h2>
+
+<a href="/dashboard">Open Dashboard</a>
+
+`);
+
+});
+
+/* ---------- SERVER START ---------- */
 
 const PORT=process.env.PORT||3000;
 
+async function startServer(){
+
+await initDatabase();
+
 app.listen(PORT,()=>{
 
-console.log("SERVER RUNNING",PORT);
+console.log("================================");
+console.log("TP + G3 SERVER RUNNING");
+console.log("PORT:",PORT);
+console.log("================================");
 
 });
+
+}
+
+startServer();
