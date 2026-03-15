@@ -215,10 +215,50 @@ if(!raceStore[raceTime]){
 raceStore[raceTime]={};
 }
 
+if(!raceStore[raceTime]){
+raceStore[raceTime]={};
+}
+
+if(!raceStore[raceTime][panel]){
+raceStore[raceTime][panel]={
+soda:0,
+horses:[]
+};
+}
+
+/* scraped horses */
+
+const scraped=scrapedResults[raceTime];
+
+let validHorses=[];
+
+if(scraped){
+
+const scrapedList=[
+
+scraped.winner,
+...(scraped.withdrawn||[])
+
+].map(normalizeHorse);
+
+horses.forEach(h=>{
+
+const n=normalizeHorse(h.name);
+
+if(scrapedList.includes(n)){
+validHorses.push(h);
+}
+
+});
+
+}
+
+/* store only matched horses */
+
 raceStore[raceTime][panel]={
 
 soda,
-horses
+horses:validHorses
 
 };
 
