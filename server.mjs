@@ -81,7 +81,7 @@ function indiaTime(){
 return new Date().toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata"});
 }
 
-/* ---------- HORSE NORMALIZER ---------- */
+/* ---------- HORSE NORMALIZER (FIXED) ---------- */
 
 function normalizeHorse(name){
 
@@ -89,8 +89,9 @@ if(!name) return "";
 
 return name
 .toLowerCase()
+.replace(/^\d+\.\s*/,"")   // remove horse number like "3."
 .replace(/\(.*?\)/g,"")
-.replace(/[^a-z0-9 ]/g,"")
+.replace(/[^a-z ]/g,"")
 .replace(/\s+/g," ")
 .trim();
 
@@ -114,7 +115,6 @@ return t
 async function initDatabase(){
 
 await pool.query(`
-
 CREATE TABLE IF NOT EXISTS races(
 id SERIAL PRIMARY KEY,
 date TEXT,
@@ -123,11 +123,9 @@ panel TEXT,
 soda INTEGER,
 UNIQUE(date,race_time,panel)
 );
-
 `);
 
 await pool.query(`
-
 CREATE TABLE IF NOT EXISTS horses(
 id SERIAL PRIMARY KEY,
 race_time TEXT,
@@ -136,7 +134,6 @@ tp_pnl INTEGER DEFAULT 0,
 g3_pnl INTEGER DEFAULT 0,
 UNIQUE(race_time,horse)
 );
-
 `);
 
 console.log("DATABASE TABLES READY");
@@ -162,12 +159,7 @@ const text=$(el).text().toLowerCase();
 for(const v in VENUES){
 
 if(text.includes(v)){
-
-found.push({
-name:v,
-id:VENUES[v]
-});
-
+found.push({name:v,id:VENUES[v]});
 }
 
 }
@@ -180,14 +172,11 @@ found=found.filter(
 
 detectedVenuesLog=found;
 
-console.log("VENUES DETECTED:",found);
-
 return found;
 
 }catch(e){
 
 console.log("VENUE DETECT ERROR",e);
-
 return[];
 
 }
@@ -206,8 +195,6 @@ activeVenues=venues;
 
 lastVenueUpdate=indiaTime();
 
-console.log("ACTIVE VENUES:",activeVenues);
-
 }catch(e){
 
 console.log("VENUE UPDATE ERROR",e);
@@ -222,10 +209,7 @@ async function scrapeResults(){
 
 try{
 
-if(!activeVenues.length){
-console.log("NO ACTIVE VENUES");
-return;
-}
+if(!activeVenues.length) return;
 
 const date=todayDate();
 
@@ -240,8 +224,6 @@ await delay(2000);
 const url=`https://www.indiarace.com/Home/racingCenterEvent?venueId=${v.id}&event_date=${date}&race_type=RESULTS`;
 
 scrapeUrlsLog.push(url);
-
-console.log("SCRAPING:",url);
 
 const res=await axios.get(url,{timeout:10000});
 
@@ -297,8 +279,6 @@ scrapedResults=results;
 
 lastScrapeTime=indiaTime();
 
-console.log("SCRAPED RESULTS:",results);
-
 buildComparison();
 
 }catch(e){
@@ -353,7 +333,7 @@ merged[n].g3=h.pnl;
 
 }
 
-/* match race time */
+/* ---------- MATCH TIME ---------- */
 
 let winnerHorse=null;
 
@@ -404,8 +384,6 @@ try{
 
 const {panel,raceTime,soda,horses}=req.body;
 
-const today=todayDate();
-
 if(!raceStore[raceTime]) raceStore[raceTime]={};
 
 if(!raceStore[raceTime][panel]){
@@ -429,14 +407,6 @@ raceStore[raceTime][panel].horses.push(newHorse);
 }
 
 });
-
-await pool.query(
-`INSERT INTO races(date,race_time,panel,soda)
-VALUES($1,$2,$3,$4)
-ON CONFLICT (date,race_time,panel)
-DO UPDATE SET soda=$4`,
-[today,raceTime,panel,soda]
-);
 
 browserLog[raceTime]=req.body;
 
@@ -525,7 +495,6 @@ html+=`</table>
 
 <h3>Comparison Data</h3>
 <pre>${JSON.stringify(compareLog,null,2)}</pre>
-
 `;
 
 res.send(html);
@@ -535,12 +504,10 @@ res.send(html);
 /* ---------- HOME ---------- */
 
 app.get("/",(req,res)=>{
-
 res.send(`
 <h2>TP + G3 Server Running</h2>
 <a href="/dashboard">Open Dashboard</a>
 `);
-
 });
 
 /* ---------- SERVER ---------- */
