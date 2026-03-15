@@ -12,9 +12,10 @@ app.use(cors());
 
 let raceStore = {};
 let scrapedResults = {};
+let winnerReport = {};
 let browserLog = {};
 let compareLog = {};
-let winnerReport = {};
+let lastScrapeTime = "";
 
 /* ---------- SCRAPER ---------- */
 
@@ -32,7 +33,17 @@ let results={};
 
 $("div[id^='race-']").each((i,r)=>{
 
-const raceTime=$(r).find(".raceTime").text().trim();
+// header example: "Race 1 - 4:00 PM"
+
+const header=$(r).find("h3").text().trim();
+
+let raceTime="";
+
+const match=header.match(/\d{1,2}:\d{2}\s?(AM|PM)/i);
+
+if(match){
+raceTime=match[0].toUpperCase();
+}
 
 let winner="";
 let withdrawn=[];
@@ -45,7 +56,9 @@ const horse=$(row).find("td").eq(2).text().trim().split("\n")[0].trim();
 
 const jockey=$(row).find("td").eq(5).text().trim();
 
-if(pl==="1") winner=horse;
+if(pl==="1"){
+winner=horse;
+}
 
 if(jockey.toLowerCase().includes("withdrawn")){
 withdrawn.push(horse);
@@ -54,25 +67,31 @@ withdrawn.push(horse);
 });
 
 if(raceTime){
+
 results[raceTime]={
 winner,
 withdrawn
 };
+
 }
 
 });
 
-scrapedResults = results;
+scrapedResults=results;
+
+lastScrapeTime=new Date().toLocaleTimeString();
+
+console.log("SCRAPED RESULTS:",results);
 
 }catch(e){
 
-console.log("SCRAPE ERROR",e);
+console.log("SCRAPE ERROR:",e);
 
 }
 
 }
 
-/* ---------- AUTO SCRAPER ---------- */
+/* ---------- AUTO SCRAPE EVERY 10s ---------- */
 
 setInterval(async()=>{
 
@@ -94,39 +113,56 @@ const g3=raceStore[time]?.g3;
 let merged={};
 
 if(tp){
+
 tp.horses.forEach(h=>{
-merged[h.name]={tp:h.pnl,g3:0};
+
+merged[h.name]={
+
+tp:h.pnl,
+g3:0
+
+};
+
 });
+
 }
 
 if(g3){
+
 g3.horses.forEach(h=>{
+
 if(!merged[h.name]){
-merged[h.name]={tp:0,g3:h.pnl};
+
+merged[h.name]={
+
+tp:0,
+g3:h.pnl
+
+};
+
 }else{
+
 merged[h.name].g3=h.pnl;
-}
-});
+
 }
 
-let winnerHorse="";
+});
+
+}
+
+let winnerHorse=scrapedResults[time]?.winner;
+
 let winnerData=null;
 
-const scraped=scrapedResults[time];
-
-if(scraped){
-
-winnerHorse=scraped.winner;
-
-if(merged[winnerHorse]){
+if(winnerHorse && merged[winnerHorse]){
 
 winnerData={
+
 horse:winnerHorse,
 tpPnl:merged[winnerHorse].tp,
 g3Pnl:merged[winnerHorse].g3
-};
 
-}
+};
 
 }
 
@@ -145,15 +181,21 @@ app.post("/race-data",(req,res)=>{
 const {panel,raceTime,soda,horses}=req.body;
 
 if(!raceStore[raceTime]){
+
 raceStore[raceTime]={};
+
 }
 
 raceStore[raceTime][panel]={
+
 soda,
 horses
+
 };
 
 browserLog[raceTime]=req.body;
+
+console.log("DATA RECEIVED:",raceTime,panel);
 
 buildComparison();
 
@@ -165,7 +207,7 @@ res.json({status:"ok"});
 
 app.post("/test",(req,res)=>{
 
-const {panel,horse}=req.body;
+const {horse}=req.body;
 
 let winner=false;
 
@@ -178,8 +220,10 @@ winner=true;
 });
 
 res.json({
+
 horse,
 winner
+
 });
 
 });
@@ -188,9 +232,15 @@ winner
 
 app.get("/dashboard",(req,res)=>{
 
-let html=`<h1>Race Winner Dashboard</h1>`;
+let html=`
 
-/* winner only */
+<h1>TP + G3 Winner Dashboard</h1>
+
+<p>Last Scrape: ${lastScrapeTime}</p>
+
+`;
+
+/* ---------- WINNER TABLE ---------- */
 
 Object.keys(winnerReport).forEach(time=>{
 
@@ -199,47 +249,85 @@ const w=winnerReport[time];
 if(!w) return;
 
 html+=`
+
 <h2>Race ${time}</h2>
 
 <table border="1" style="border-collapse:collapse">
 
 <tr>
+
 <th>Horse</th>
 <th>TP PNL</th>
 <th>G3 PNL</th>
+
 </tr>
 
 <tr style="background:lightgreen">
+
 <td>${w.horse}</td>
 <td>${w.tpPnl}</td>
 <td>${w.g3Pnl}</td>
+
 </tr>
 
 </table>
+
 `;
 
 });
 
-/* debug section */
+/* ---------- DEBUG SECTION ---------- */
 
-html+=`<hr><h2>Browser Data</h2>
+html+=`
+
+<hr>
+
+<h2>Browser Data</h2>
+
 <pre>${JSON.stringify(browserLog,null,2)}</pre>
 
 <h2>Scraped Data</h2>
+
 <pre>${JSON.stringify(scrapedResults,null,2)}</pre>
 
-<h2>Comparison</h2>
+<h2>Comparison Data</h2>
+
 <pre>${JSON.stringify(compareLog,null,2)}</pre>
+
 `;
 
 res.send(html);
 
 });
 
+/* ---------- HOME ---------- */
+
+app.get("/",(req,res)=>{
+
+res.send(`
+
+<h2>TP + G3 Server Running</h2>
+
+<p>Open Dashboard:</p>
+
+<a href="/dashboard">Dashboard</a>
+
+`);
+
+});
+
 /* ---------- SERVER ---------- */
 
-app.listen(3000,()=>{
+const PORT=process.env.PORT || 3000;
 
-console.log("TP + G3 WINNER SERVER RUNNING");
+app.listen(PORT,()=>{
+
+console.log("================================");
+
+console.log("TP + G3 SERVER RUNNING");
+
+console.log("PORT:",PORT);
+
+console.log("================================");
 
 });
