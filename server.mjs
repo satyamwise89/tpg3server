@@ -20,7 +20,6 @@ let lastScrapeTime = "";
 /* ---------- HORSE NORMALIZER ---------- */
 
 function normalizeHorse(name){
-
 if(!name) return "";
 
 return name
@@ -29,7 +28,6 @@ return name
 .replace(/[^a-z0-9 ]/g,"")
 .replace(/\s+/g," ")
 .trim();
-
 }
 
 /* ---------- SCRAPER ---------- */
@@ -187,11 +185,9 @@ const wn=normalizeHorse(winnerHorse);
 if(merged[wn]){
 
 winnerData={
-
 horse:winnerHorse,
 tpPnl:merged[wn].tp,
 g3Pnl:merged[wn].g3
-
 };
 
 }
@@ -215,10 +211,6 @@ if(!raceStore[raceTime]){
 raceStore[raceTime]={};
 }
 
-if(!raceStore[raceTime]){
-raceStore[raceTime]={};
-}
-
 if(!raceStore[raceTime][panel]){
 raceStore[raceTime][panel]={
 soda:0,
@@ -230,30 +222,32 @@ horses:[]
 
 const scraped=scrapedResults[raceTime];
 
-let validHorses=[];
+if(!scraped){
+return res.json({status:"scraped result not ready"});
+}
 
-if(scraped){
-
-const scrapedList=[
-
+const validNames=[
 scraped.winner,
 ...(scraped.withdrawn||[])
-
 ].map(normalizeHorse);
+
+/* filter only valid horses */
+
+let validHorses=[];
 
 horses.forEach(h=>{
 
 const n=normalizeHorse(h.name);
 
-if(scrapedList.includes(n)){
+if(validNames.includes(n)){
 validHorses.push(h);
 }
 
 });
 
-}
+/* अगर कोई valid horse नहीं मिला तो पुराना data replace नहीं होगा */
 
-/* store only matched horses */
+if(validHorses.length>0){
 
 raceStore[raceTime][panel]={
 
@@ -261,6 +255,8 @@ soda,
 horses:validHorses
 
 };
+
+}
 
 browserLog[raceTime]=req.body;
 
@@ -328,7 +324,7 @@ scrapedWinner:result?.winner||null
 
 });
 
-/* ---------- DASHBOARD (ONLY MATCHED WINNERS) ---------- */
+/* ---------- DASHBOARD ---------- */
 
 app.get("/dashboard",(req,res)=>{
 
@@ -423,11 +419,8 @@ res.send(html);
 app.get("/",(req,res)=>{
 
 res.send(`
-
 <h2>TP + G3 Server Running</h2>
-
 <a href="/dashboard">Open Dashboard</a>
-
 `);
 
 });
