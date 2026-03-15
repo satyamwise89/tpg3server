@@ -18,6 +18,18 @@ connectionString: process.env.DATABASE_URL,
 ssl: { rejectUnauthorized: false }
 });
 
+/* ---------- VENUE MAP ---------- */
+
+const VENUES = {
+bangalore:3,
+mysore:8,
+mumbai:2,
+pune:10,
+hyderabad:11,
+kolkata:1,
+chennai:4
+};
+
 /* ---------- MEMORY ---------- */
 
 let raceStore = {};
@@ -26,6 +38,20 @@ let winnerReport = {};
 let browserLog = {};
 let compareLog = {};
 let lastScrapeTime = "";
+
+/* ---------- DATE ---------- */
+
+function todayDate(){
+
+const d=new Date();
+
+const yyyy=d.getFullYear();
+const mm=String(d.getMonth()+1).padStart(2,"0");
+const dd=String(d.getDate()).padStart(2,"0");
+
+return `${yyyy}-${mm}-${dd}`;
+
+}
 
 /* ---------- HORSE NORMALIZER ---------- */
 
@@ -82,19 +108,65 @@ console.log("DATABASE TABLES READY");
 
 }
 
-/* ---------- SCRAPER ---------- */
+/* ---------- DETECT VENUES FROM HOMEPAGE ---------- */
+
+async function detectVenues(){
+
+try{
+
+const res=await axios.get("https://www.indiarace.com/");
+const html=res.data.toLowerCase();
+
+let found=[];
+
+for(const v in VENUES){
+
+if(html.includes(v)){
+
+found.push({
+name:v,
+id:VENUES[v]
+});
+
+}
+
+}
+
+console.log("VENUES DETECTED:",found);
+
+return found;
+
+}catch(e){
+
+console.log("VENUE DETECT ERROR",e);
+
+return [];
+
+}
+
+}
+
+/* ---------- SCRAPE RESULTS ---------- */
 
 async function scrapeResults(){
 
 try{
 
-const url="https://www.indiarace.com/Home/racingCenterEvent?venueId=1&event_date=2026-03-12&race_type=RESULTS";
+const venues=await detectVenues();
+
+const date=todayDate();
+
+let results={};
+
+for(const v of venues){
+
+const url=`https://www.indiarace.com/Home/racingCenterEvent?venueId=${v.id}&event_date=${date}&race_type=RESULTS`;
+
+console.log("SCRAPING:",url);
 
 const res = await axios.get(url);
 
 const $ = cheerio.load(res.data);
-
-let results={};
 
 $("div[id^='race-']").each((i,r)=>{
 
@@ -135,12 +207,15 @@ if(raceTime){
 
 results[raceTime]={
 winner,
-withdrawn
+withdrawn,
+venue:v.name
 };
 
 }
 
 });
+
+}
 
 scrapedResults=results;
 
@@ -258,7 +333,7 @@ app.post("/race-data",async(req,res)=>{
 
 const {panel,raceTime,soda,horses}=req.body;
 
-const today=new Date().toISOString().split("T")[0];
+const today=todayDate();
 
 if(!raceStore[raceTime]){
 raceStore[raceTime]={};
@@ -266,16 +341,12 @@ raceStore[raceTime]={};
 
 if(!raceStore[raceTime][panel]){
 raceStore[raceTime][panel]={
-
 soda:0,
 horses:[]
-
 };
 }
 
 raceStore[raceTime][panel].soda=soda;
-
-/* merge horses */
 
 horses.forEach(newHorse=>{
 
@@ -297,7 +368,7 @@ raceStore[raceTime][panel].horses.push(newHorse);
 
 });
 
-/* SAVE RACE */
+/* ---------- SAVE RACE ---------- */
 
 await pool.query(
 
@@ -310,7 +381,7 @@ DO UPDATE SET soda=$4`,
 
 );
 
-/* SAVE HORSES */
+/* ---------- SAVE HORSES ---------- */
 
 for(const h of horses){
 
@@ -341,62 +412,6 @@ console.log("DATA RECEIVED:",raceTime,panel);
 buildComparison();
 
 res.json({status:"ok"});
-
-});
-
-/* ---------- TEST MODE ---------- */
-
-app.post("/test",(req,res)=>{
-
-const {horse,raceTime,pnl,soda,panel}=req.body;
-
-if(!raceStore[raceTime]){
-raceStore[raceTime]={};
-}
-
-const side = panel === "g3" ? "g3" : "tp";
-
-raceStore[raceTime][side]={
-
-soda:Number(soda)||0,
-
-horses:[
-{
-name:horse,
-pnl:Number(pnl)||0
-}
-]
-
-};
-
-buildComparison();
-
-const result=scrapedResults[raceTime];
-
-let winner=false;
-
-if(result){
-
-const h=normalizeHorse(horse);
-const w=normalizeHorse(result.winner);
-
-if(h===w){
-winner=true;
-}
-
-}
-
-res.json({
-
-horse,
-raceTime,
-pnl,
-soda,
-panel:side,
-winner,
-scrapedWinner:result?.winner||null
-
-});
 
 });
 
@@ -455,25 +470,6 @@ html+=`
 
 html+="</table>";
 
-/* ---------- DEBUG ---------- */
-
-html+=`
-
-<hr>
-
-<h3>Debug</h3>
-
-<h4>Browser Data</h4>
-<pre>${JSON.stringify(browserLog,null,2)}</pre>
-
-<h4>Scraped Data</h4>
-<pre>${JSON.stringify(scrapedResults,null,2)}</pre>
-
-<h4>Comparison Data</h4>
-<pre>${JSON.stringify(compareLog,null,2)}</pre>
-
-`;
-
 res.send(html);
 
 });
@@ -485,7 +481,6 @@ app.get("/",(req,res)=>{
 res.send(`
 
 <h2>TP + G3 Server Running</h2>
-
 <a href="/dashboard">Open Dashboard</a>
 
 `);
