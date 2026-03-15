@@ -293,11 +293,13 @@ message:"Test data inserted"
 
 /* ---------- SUPER DASHBOARD ---------- */
 
+/* ---------- SUPER DASHBOARD ---------- */
+
 app.get("/dashboard",(req,res)=>{
 
 let html=`
 
-<h1>TP + G3 Super Dashboard</h1>
+<h1>TP + G3 Race Dashboard</h1>
 
 <p>Last Scrape: ${lastScrapeTime}</p>
 
@@ -308,6 +310,11 @@ Object.keys(compareLog).forEach(time=>{
 const horses=compareLog[time];
 const winner=winnerReport[time]?.horse;
 
+const tpSoda=raceStore[time]?.tp?.soda || 0;
+const g3Soda=raceStore[time]?.g3?.soda || 0;
+
+const withdrawnList=scrapedResults[time]?.withdrawn || [];
+
 html+=`<h2>Race ${time}</h2>`;
 
 html+=`
@@ -316,35 +323,80 @@ html+=`
 
 <tr style="background:#ddd">
 
-<th>Horse</th>
+<th>Sr No.</th>
+<th>Horse Name</th>
+<th>TP Soda</th>
+<th>G3 Soda</th>
 <th>TP PNL</th>
 <th>G3 PNL</th>
+<th>Withdrawn</th>
 
 </tr>
 
 `;
+
+let i=1;
 
 Object.values(horses).forEach(h=>{
 
-const highlight=(winner && normalizeHorse(h.horse)===normalizeHorse(winner))
-?"style='background:lightgreen;font-weight:bold'"
-:"";
+const isWithdrawn = withdrawnList.some(w =>
+normalizeHorse(w) === normalizeHorse(h.horse)
+);
+
+let rowStyle="";
+
+if(isWithdrawn){
+rowStyle="style='background:pink'";
+}
+else if(winner && normalizeHorse(h.horse)===normalizeHorse(winner)){
+rowStyle="style='background:lightgreen;font-weight:bold'";
+}
 
 html+=`
 
-<tr ${highlight}>
+<tr ${rowStyle}>
 
+<td>${i}</td>
 <td>${h.horse}</td>
+<td>${tpSoda}</td>
+<td>${g3Soda}</td>
 <td>${h.tp}</td>
 <td>${h.g3}</td>
+<td>${isWithdrawn ? "YES" : ""}</td>
 
 </tr>
 
 `;
+
+i++;
 
 });
 
 html+="</table>";
+
+});
+
+/* ---------- DEBUG ---------- */
+
+html+=`
+
+<hr>
+
+<h2>Browser Data</h2>
+
+<pre>${JSON.stringify(browserLog,null,2)}</pre>
+
+<h2>Scraped Data</h2>
+
+<pre>${JSON.stringify(scrapedResults,null,2)}</pre>
+
+<h2>Comparison Data</h2>
+
+<pre>${JSON.stringify(compareLog,null,2)}</pre>
+
+`;
+
+res.send(html);
 
 });
 
