@@ -273,3 +273,36 @@ console.log("https://tpg3server.onrender.com/dashboard");
 console.log("================================");
 
 });
+
+
+
+/* ---------- TEST HORSE ---------- */
+
+app.post("/test-horse",(req,res)=>{
+
+const {horse}=req.body;
+
+console.log("TEST HORSE RECEIVED:",horse);
+
+let winner=false;
+let withdrawn=false;
+
+Object.values(lastScrapedData).forEach(r=>{
+
+if(r.winner===horse) winner=true;
+
+if(r.withdrawn.includes(horse)) withdrawn=true;
+
+});
+
+const result={
+horse,
+winner,
+withdrawn
+};
+
+console.log("TEST RESULT:",result);
+
+res.json(result);
+
+});
