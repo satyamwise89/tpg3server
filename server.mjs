@@ -9,18 +9,23 @@ const { Pool } = pkg;
 const app = express();
 
 app.use(express.json());
-app.use(cors());
+
+app.use(cors({
+origin:"*",
+methods:["GET","POST"],
+allowedHeaders:["Content-Type"]
+}));
 
 /* ---------- DATABASE ---------- */
 
 const pool = new Pool({
 connectionString: process.env.DATABASE_URL,
-ssl: { rejectUnauthorized: false }
+ssl:{rejectUnauthorized:false}
 });
 
 /* ---------- VENUE MAP ---------- */
 
-const VENUES = {
+const VENUES={
 bangalore:3,
 mysore:8,
 mumbai:2,
@@ -32,20 +37,30 @@ chennai:4
 
 /* ---------- MEMORY ---------- */
 
-let raceStore = {};
-let scrapedResults = {};
-let winnerReport = {};
-let browserLog = {};
-let compareLog = {};
-let lastScrapeTime = "";
+let raceStore={};
+let scrapedResults={};
+let winnerReport={};
+let browserLog={};
+let compareLog={};
 
-let detectedVenuesLog = [];
-let scrapeUrlsLog = [];
+let detectedVenuesLog=[];
+let scrapeUrlsLog=[];
 
-let activeVenues = [];
-let lastVenueUpdate = "";
+let activeVenues=[];
+let lastVenueUpdate="";
+let lastScrapeTime="";
 
-/* ---------- DATE (INDIAN) ---------- */
+/* ---------- REQUEST LOCK ---------- */
+
+let requestLock=false;
+
+/* ---------- HELPERS ---------- */
+
+function delay(ms){
+return new Promise(r=>setTimeout(r,ms));
+}
+
+/* ---------- DATE (INDIA) ---------- */
 
 function todayDate(){
 
@@ -58,17 +73,12 @@ const mm=String(d.getMonth()+1).padStart(2,"0");
 const dd=String(d.getDate()).padStart(2,"0");
 
 return `${yyyy}-${mm}-${dd}`;
-
 }
 
 /* ---------- INDIA TIME ---------- */
 
 function indiaTime(){
-
-return new Date().toLocaleTimeString("en-IN",{
-timeZone:"Asia/Kolkata"
-});
-
+return new Date().toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata"});
 }
 
 /* ---------- HORSE NORMALIZER ---------- */
@@ -92,14 +102,13 @@ async function initDatabase(){
 
 await pool.query(`
 
-CREATE TABLE IF NOT EXISTS races (
+CREATE TABLE IF NOT EXISTS races(
 
 id SERIAL PRIMARY KEY,
 date TEXT,
 race_time TEXT,
 panel TEXT,
 soda INTEGER,
-
 UNIQUE(date,race_time,panel)
 
 );
@@ -108,14 +117,13 @@ UNIQUE(date,race_time,panel)
 
 await pool.query(`
 
-CREATE TABLE IF NOT EXISTS horses (
+CREATE TABLE IF NOT EXISTS horses(
 
 id SERIAL PRIMARY KEY,
 race_time TEXT,
 horse TEXT,
 tp_pnl INTEGER DEFAULT 0,
 g3_pnl INTEGER DEFAULT 0,
-
 UNIQUE(race_time,horse)
 
 );
@@ -126,23 +134,21 @@ console.log("DATABASE TABLES READY");
 
 }
 
-/* ---------- DETECT VENUES FROM HOMEPAGE ---------- */
+/* ---------- DETECT VENUES ---------- */
 
 async function detectVenues(){
 
 try{
 
-const res = await axios.get("https://www.indiarace.com/",{timeout:10000});
+const res=await axios.get("https://www.indiarace.com/",{timeout:10000});
 
-const $ = cheerio.load(res.data);
+const $=cheerio.load(res.data);
 
-let found = [];
-
-/* Only detect venue from Live Center marquee */
+let found=[];
 
 $(".marquee_inner_div .marquees a").each((i,el)=>{
 
-const text = $(el).text().toLowerCase();
+const text=$(el).text().toLowerCase();
 
 for(const v in VENUES){
 
@@ -159,13 +165,11 @@ id:VENUES[v]
 
 });
 
-/* remove duplicates */
-
-found = found.filter(
-(v,i,self)=> i === self.findIndex(t => t.id === v.id)
+found=found.filter(
+(v,i,self)=>i===self.findIndex(t=>t.id===v.id)
 );
 
-detectedVenuesLog = found;
+detectedVenuesLog=found;
 
 console.log("VENUES DETECTED:",found);
 
@@ -175,13 +179,13 @@ return found;
 
 console.log("VENUE DETECT ERROR",e);
 
-return [];
+return[];
 
 }
 
 }
 
-/* ---------- UPDATE ACTIVE VENUES ---------- */
+/* ---------- UPDATE VENUES ---------- */
 
 async function updateVenues(){
 
@@ -193,7 +197,7 @@ activeVenues=venues;
 
 lastVenueUpdate=indiaTime();
 
-console.log("ACTIVE VENUES UPDATED:",activeVenues);
+console.log("ACTIVE VENUES:",activeVenues);
 
 }catch(e){
 
@@ -209,11 +213,9 @@ async function scrapeResults(){
 
 try{
 
-const venues=activeVenues;
+if(!activeVenues.length){
 
-if(!venues.length){
-
-console.log("NO VENUES DETECTED YET");
+console.log("NO ACTIVE VENUES");
 return;
 
 }
@@ -224,9 +226,12 @@ let results={};
 
 scrapeUrlsLog=[];
 
-for(const v of venues){
+for(const v of activeVenues){
 
-const url=`https://www.indiarace.com/Home/racingCenterEvent?venueId=${v.id}&event_date=${date}&race_type=RESULTS`;
+await delay(2000);
+
+const url=
+`https://www.indiarace.com/Home/racingCenterEvent?venueId=${v.id}&event_date=${date}&race_type=RESULTS`;
 
 scrapeUrlsLog.push(url);
 
@@ -261,13 +266,10 @@ const horse=$(row)
 
 const jockey=$(row).find("td").eq(5).text().trim();
 
-if(pl==="1"){
-winner=horse;
-}
+if(pl==="1") winner=horse;
 
-if(pl==="W" || jockey.toLowerCase().includes("withdrawn")){
+if(pl==="W" || jockey.toLowerCase().includes("withdrawn"))
 withdrawn.push(horse);
-}
 
 });
 
@@ -295,7 +297,7 @@ buildComparison();
 
 }catch(e){
 
-console.log("SCRAPE ERROR:",e);
+console.log("SCRAPE ERROR",e);
 
 }
 
@@ -303,8 +305,8 @@ console.log("SCRAPE ERROR:",e);
 
 /* ---------- AUTO SCRAPE ---------- */
 
-setInterval(updateVenues,600000);   // 10 min
-setInterval(scrapeResults,120000);  // 2 min
+setInterval(updateVenues,600000); // 10 min
+setInterval(scrapeResults,180000); // 3 min
 
 /* ---------- BUILD COMPARISON ---------- */
 
@@ -323,11 +325,7 @@ tp.horses.forEach(h=>{
 
 const n=normalizeHorse(h.name);
 
-merged[n]={
-horse:h.name,
-tp:h.pnl,
-g3:0
-};
+merged[n]={horse:h.name,tp:h.pnl,g3:0};
 
 });
 
@@ -340,9 +338,13 @@ g3.horses.forEach(h=>{
 const n=normalizeHorse(h.name);
 
 if(!merged[n]){
+
 merged[n]={horse:h.name,tp:0,g3:h.pnl};
+
 }else{
+
 merged[n].g3=h.pnl;
+
 }
 
 });
@@ -380,13 +382,19 @@ compareLog[time]=merged;
 
 app.post("/race-data",async(req,res)=>{
 
+if(requestLock){
+return res.json({status:"server busy"});
+}
+
+requestLock=true;
+
+try{
+
 const {panel,raceTime,soda,horses}=req.body;
 
 const today=todayDate();
 
-if(!raceStore[raceTime]){
-raceStore[raceTime]={};
-}
+if(!raceStore[raceTime]) raceStore[raceTime]={};
 
 if(!raceStore[raceTime][panel]){
 raceStore[raceTime][panel]={soda:0,horses:[]};
@@ -421,35 +429,20 @@ DO UPDATE SET soda=$4`,
 
 );
 
-for(const h of horses){
-
-await pool.query(
-
-`INSERT INTO horses(race_time,horse,tp_pnl,g3_pnl)
-VALUES($1,$2,$3,$4)
-ON CONFLICT (race_time,horse)
-DO UPDATE SET
-tp_pnl = CASE WHEN $3>0 THEN $3 ELSE horses.tp_pnl END,
-g3_pnl = CASE WHEN $4>0 THEN $4 ELSE horses.g3_pnl END`,
-
-[
-raceTime,
-h.name,
-panel==="tp"?h.pnl:0,
-panel==="g3"?h.pnl:0
-]
-
-);
-
-}
-
 browserLog[raceTime]=req.body;
-
-console.log("DATA RECEIVED:",raceTime,panel);
 
 buildComparison();
 
 res.json({status:"ok"});
+
+}catch(e){
+
+console.log("RACE DATA ERROR",e);
+res.json({status:"error"});
+
+}
+
+requestLock=false;
 
 });
 
@@ -462,7 +455,6 @@ let html=`
 <h1>TP + G3 Winner Dashboard</h1>
 
 <p>Last Scrape: ${lastScrapeTime}</p>
-
 <p>Last Venue Update: ${lastVenueUpdate}</p>
 
 <meta http-equiv="refresh" content="5">
@@ -482,7 +474,6 @@ let html=`
 Object.keys(winnerReport).forEach(time=>{
 
 const w=winnerReport[time];
-
 if(!w) return;
 
 const tpSoda=raceStore[time]?.tp?.soda||0;
@@ -502,9 +493,7 @@ html+=`
 
 });
 
-html+="</table>";
-
-html+=`
+html+=`</table>
 
 <hr>
 
@@ -537,10 +526,12 @@ res.send(html);
 /* ---------- HOME ---------- */
 
 app.get("/",(req,res)=>{
+
 res.send(`
 <h2>TP + G3 Server Running</h2>
 <a href="/dashboard">Open Dashboard</a>
 `);
+
 });
 
 /* ---------- SERVER ---------- */
