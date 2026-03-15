@@ -17,6 +17,21 @@ let browserLog = {};
 let compareLog = {};
 let lastScrapeTime = "";
 
+/* ---------- HORSE NORMALIZER ---------- */
+
+function normalizeHorse(name){
+
+if(!name) return "";
+
+return name
+.toLowerCase()
+.replace(/\(.*?\)/g,"")
+.replace(/[^a-z0-9 ]/g,"")
+.replace(/\s+/g," ")
+.trim();
+
+}
+
 /* ---------- SCRAPER ---------- */
 
 async function scrapeResults(){
@@ -33,8 +48,6 @@ let results={};
 
 $("div[id^='race-']").each((i,r)=>{
 
-/* ---------- RACE TIME ---------- */
-
 const raceTime=$(r)
 .find(".archive_time h4")
 .eq(1)
@@ -44,8 +57,6 @@ const raceTime=$(r)
 
 let winner="";
 let withdrawn=[];
-
-/* ---------- HORSE TABLE ---------- */
 
 $(r).find("tbody tr").each((i,row)=>{
 
@@ -95,7 +106,7 @@ console.log("SCRAPE ERROR:",e);
 
 }
 
-/* ---------- AUTO SCRAPE EVERY 10s ---------- */
+/* ---------- AUTO SCRAPE ---------- */
 
 setInterval(async()=>{
 
@@ -122,8 +133,11 @@ if(tp){
 
 tp.horses.forEach(h=>{
 
-merged[h.name]={
+const n=normalizeHorse(h.name);
 
+merged[n]={
+
+horse:h.name,
 tp:h.pnl,
 g3:0
 
@@ -139,10 +153,13 @@ if(g3){
 
 g3.horses.forEach(h=>{
 
-if(!merged[h.name]){
+const n=normalizeHorse(h.name);
 
-merged[h.name]={
+if(!merged[n]){
 
+merged[n]={
+
+horse:h.name,
 tp:0,
 g3:h.pnl
 
@@ -150,7 +167,7 @@ g3:h.pnl
 
 }else{
 
-merged[h.name].g3=h.pnl;
+merged[n].g3=h.pnl;
 
 }
 
@@ -158,21 +175,27 @@ merged[h.name].g3=h.pnl;
 
 }
 
-/* ---------- FIND WINNER ---------- */
+/* ---------- WINNER ---------- */
 
 let winnerHorse=scrapedResults[time]?.winner;
 
 let winnerData=null;
 
-if(winnerHorse && merged[winnerHorse]){
+if(winnerHorse){
+
+const wn=normalizeHorse(winnerHorse);
+
+if(merged[wn]){
 
 winnerData={
 
 horse:winnerHorse,
-tpPnl:merged[winnerHorse].tp,
-g3Pnl:merged[winnerHorse].g3
+tpPnl:merged[wn].tp,
+g3Pnl:merged[wn].g3
 
 };
+
+}
 
 }
 
@@ -191,9 +214,7 @@ app.post("/race-data",(req,res)=>{
 const {panel,raceTime,soda,horses}=req.body;
 
 if(!raceStore[raceTime]){
-
 raceStore[raceTime]={};
-
 }
 
 raceStore[raceTime][panel]={
@@ -217,54 +238,58 @@ res.json({status:"ok"});
 
 app.post("/test",(req,res)=>{
 
-const {horse}=req.body;
+const {horse,raceTime}=req.body;
+
+const result=scrapedResults[raceTime];
 
 let winner=false;
 
-Object.values(scrapedResults).forEach(r=>{
+if(result){
 
-if(r.winner===horse){
+const h=normalizeHorse(horse);
+const w=normalizeHorse(result.winner);
+
+if(h===w){
 winner=true;
 }
 
-});
+}
 
 res.json({
 
 horse,
-winner
+raceTime,
+winner,
+scrapedWinner:result?.winner || null
 
 });
 
 });
 
-/* ---------- DASHBOARD ---------- */
+/* ---------- SUPER DASHBOARD ---------- */
 
 app.get("/dashboard",(req,res)=>{
 
 let html=`
 
-<h1>TP + G3 Winner Dashboard</h1>
+<h1>TP + G3 Super Dashboard</h1>
 
 <p>Last Scrape: ${lastScrapeTime}</p>
 
 `;
 
-/* ---------- WINNER TABLE ---------- */
+Object.keys(compareLog).forEach(time=>{
 
-Object.keys(winnerReport).forEach(time=>{
+const horses=compareLog[time];
+const winner=winnerReport[time]?.horse;
 
-const w=winnerReport[time];
-
-if(!w) return;
+html+=`<h2>Race ${time}</h2>`;
 
 html+=`
 
-<h2>Race ${time}</h2>
+<table border="1" style="border-collapse:collapse;font-size:14px">
 
-<table border="1" style="border-collapse:collapse">
-
-<tr>
+<tr style="background:#ddd">
 
 <th>Horse</th>
 <th>TP PNL</th>
@@ -272,21 +297,33 @@ html+=`
 
 </tr>
 
-<tr style="background:lightgreen">
+`;
 
-<td>${w.horse}</td>
-<td>${w.tpPnl}</td>
-<td>${w.g3Pnl}</td>
+Object.values(horses).forEach(h=>{
+
+const highlight=(winner && normalizeHorse(h.horse)===normalizeHorse(winner))
+?"style='background:lightgreen;font-weight:bold'"
+:"";
+
+html+=`
+
+<tr ${highlight}>
+
+<td>${h.horse}</td>
+<td>${h.tp}</td>
+<td>${h.g3}</td>
 
 </tr>
-
-</table>
 
 `;
 
 });
 
-/* ---------- DEBUG SECTION ---------- */
+html+="</table>";
+
+});
+
+/* ---------- DEBUG ---------- */
 
 html+=`
 
@@ -318,9 +355,7 @@ res.send(`
 
 <h2>TP + G3 Server Running</h2>
 
-<p>Open Dashboard:</p>
-
-<a href="/dashboard">Dashboard</a>
+<a href="/dashboard">Open Dashboard</a>
 
 `);
 
@@ -333,11 +368,8 @@ const PORT=process.env.PORT || 3000;
 app.listen(PORT,()=>{
 
 console.log("================================");
-
 console.log("TP + G3 SERVER RUNNING");
-
 console.log("PORT:",PORT);
-
 console.log("================================");
 
 });
