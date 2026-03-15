@@ -12,7 +12,9 @@ app.use(cors());
 
 let raceStore = {};
 let scrapedResults = {};
-let finalReport = {};
+let browserLog = {};
+let compareLog = {};
+let winnerReport = {};
 
 /* ---------- SCRAPER ---------- */
 
@@ -60,7 +62,7 @@ withdrawn
 
 });
 
-scrapedResults=results;
+scrapedResults = results;
 
 }catch(e){
 
@@ -70,90 +72,73 @@ console.log("SCRAPE ERROR",e);
 
 }
 
-/* ---------- AUTO SCRAPE ---------- */
+/* ---------- AUTO SCRAPER ---------- */
 
 setInterval(async()=>{
 
 await scrapeResults();
 
-buildReports();
+buildComparison();
 
 },10000);
 
-/* ---------- BUILD REPORT ---------- */
+/* ---------- BUILD COMPARISON ---------- */
 
-function buildReports(){
+function buildComparison(){
 
-Object.keys(raceStore).forEach(raceTime=>{
+Object.keys(raceStore).forEach(time=>{
 
-const tp=raceStore[raceTime]?.tp;
-const g3=raceStore[raceTime]?.g3;
-
-if(!tp && !g3) return;
+const tp=raceStore[time]?.tp;
+const g3=raceStore[time]?.g3;
 
 let merged={};
 
 if(tp){
-
 tp.horses.forEach(h=>{
-
-merged[h.name]={
-tpPnl:h.pnl,
-g3Pnl:0
-};
-
+merged[h.name]={tp:h.pnl,g3:0};
 });
-
 }
 
 if(g3){
-
 g3.horses.forEach(h=>{
-
 if(!merged[h.name]){
-merged[h.name]={tpPnl:0,g3Pnl:h.pnl};
+merged[h.name]={tp:0,g3:h.pnl};
 }else{
-merged[h.name].g3Pnl=h.pnl;
+merged[h.name].g3=h.pnl;
 }
+});
+}
+
+let winnerHorse="";
+let winnerData=null;
+
+const scraped=scrapedResults[time];
+
+if(scraped){
+
+winnerHorse=scraped.winner;
+
+if(merged[winnerHorse]){
+
+winnerData={
+horse:winnerHorse,
+tpPnl:merged[winnerHorse].tp,
+g3Pnl:merged[winnerHorse].g3
+};
+
+}
+
+}
+
+winnerReport[time]=winnerData;
+
+compareLog[time]=merged;
 
 });
 
 }
 
-let report=[];
-
-Object.keys(merged).forEach(name=>{
-
-let winner=false;
-let withdrawn=false;
-
-const r=scrapedResults[raceTime];
-
-if(r){
-
-if(r.winner===name) winner=true;
-
-if(r.withdrawn.includes(name)) withdrawn=true;
-
-}
-
-report.push({
-horse:name,
-tpPnl:merged[name].tpPnl,
-g3Pnl:merged[name].g3Pnl,
-winner,
-withdrawn
-});
-
-});
-
-finalReport[raceTime]=report;
-
-});
-
-}
-
-/* ---------- RECEIVE DATA ---------- */
+/* ---------- RECEIVE BROWSER DATA ---------- */
 
 app.post("/race-data",(req,res)=>{
 
@@ -168,11 +153,34 @@ soda,
 horses
 };
 
-console.log("DATA RECEIVED:",raceTime,panel);
+browserLog[raceTime]=req.body;
 
-buildReports();
+buildComparison();
 
 res.json({status:"ok"});
+
+});
+
+/* ---------- TEST MODE ---------- */
+
+app.post("/test",(req,res)=>{
+
+const {panel,horse}=req.body;
+
+let winner=false;
+
+Object.values(scrapedResults).forEach(r=>{
+
+if(r.winner===horse){
+winner=true;
+}
+
+});
+
+res.json({
+horse,
+winner
+});
 
 });
 
@@ -180,52 +188,49 @@ res.json({status:"ok"});
 
 app.get("/dashboard",(req,res)=>{
 
-let html=`<h2>Race Comparison Dashboard</h2>`;
+let html=`<h1>Race Winner Dashboard</h1>`;
 
-Object.keys(finalReport).forEach(time=>{
+/* winner only */
 
-html+=`<h3>Race ${time}</h3>`;
+Object.keys(winnerReport).forEach(time=>{
+
+const w=winnerReport[time];
+
+if(!w) return;
 
 html+=`
+<h2>Race ${time}</h2>
+
 <table border="1" style="border-collapse:collapse">
+
 <tr>
 <th>Horse</th>
 <th>TP PNL</th>
 <th>G3 PNL</th>
-<th>Status</th>
 </tr>
-`;
 
-finalReport[time].forEach(r=>{
-
-let status="";
-
-let color="";
-
-if(r.winner){
-status="WINNER";
-color="lightgreen";
-}
-
-if(r.withdrawn){
-status="WITHDRAWN";
-color="pink";
-}
-
-html+=`
-<tr style="background:${color}">
-<td>${r.horse}</td>
-<td>${r.tpPnl}</td>
-<td>${r.g3Pnl}</td>
-<td>${status}</td>
+<tr style="background:lightgreen">
+<td>${w.horse}</td>
+<td>${w.tpPnl}</td>
+<td>${w.g3Pnl}</td>
 </tr>
+
+</table>
 `;
 
 });
 
-html+=`</table><br>`;
+/* debug section */
 
-});
+html+=`<hr><h2>Browser Data</h2>
+<pre>${JSON.stringify(browserLog,null,2)}</pre>
+
+<h2>Scraped Data</h2>
+<pre>${JSON.stringify(scrapedResults,null,2)}</pre>
+
+<h2>Comparison</h2>
+<pre>${JSON.stringify(compareLog,null,2)}</pre>
+`;
 
 res.send(html);
 
@@ -235,6 +240,6 @@ res.send(html);
 
 app.listen(3000,()=>{
 
-console.log("TP + G3 TIME MATCH SERVER RUNNING");
+console.log("TP + G3 WINNER SERVER RUNNING");
 
 });
