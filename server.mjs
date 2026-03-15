@@ -290,7 +290,7 @@ scrapedWinner:result?.winner||null
 
 });
 
-/* ---------- DASHBOARD ---------- */
+/* ---------- DASHBOARD (SINGLE TABLE) ---------- */
 
 app.get("/dashboard",(req,res)=>{
 
@@ -299,6 +299,23 @@ let html=`
 <h1>TP + G3 Race Dashboard</h1>
 
 <p>Last Scrape: ${lastScrapeTime}</p>
+
+<meta http-equiv="refresh" content="5">
+
+<table border="1" style="border-collapse:collapse;font-size:14px">
+
+<tr style="background:#ddd">
+
+<th>Race Time</th>
+<th>Sr No.</th>
+<th>Horse Name</th>
+<th>TP Soda</th>
+<th>G3 Soda</th>
+<th>TP PNL</th>
+<th>G3 PNL</th>
+<th>Withdrawn</th>
+
+</tr>
 
 `;
 
@@ -311,26 +328,6 @@ const tpSoda=raceStore[time]?.tp?.soda||0;
 const g3Soda=raceStore[time]?.g3?.soda||0;
 
 const withdrawnList=scrapedResults[time]?.withdrawn||[];
-
-html+=`<h2>Race ${time}</h2>`;
-
-html+=`
-
-<table border="1" style="border-collapse:collapse;font-size:14px">
-
-<tr style="background:#ddd">
-
-<th>Sr No.</th>
-<th>Horse Name</th>
-<th>TP Soda</th>
-<th>G3 Soda</th>
-<th>TP PNL</th>
-<th>G3 PNL</th>
-<th>Withdrawn</th>
-
-</tr>
-
-`;
 
 let i=1;
 
@@ -353,6 +350,7 @@ html+=`
 
 <tr ${rowStyle}>
 
+<td>${time}</td>
 <td>${i}</td>
 <td>${h.horse}</td>
 <td>${tpSoda}</td>
@@ -369,29 +367,9 @@ i++;
 
 });
 
-html+="</table>";
-
 });
 
-/* ---------- DEBUG ---------- */
-
-html+=`
-
-<hr>
-
-<h2>Browser Data</h2>
-
-<pre>${JSON.stringify(browserLog,null,2)}</pre>
-
-<h2>Scraped Data</h2>
-
-<pre>${JSON.stringify(scrapedResults,null,2)}</pre>
-
-<h2>Comparison Data</h2>
-
-<pre>${JSON.stringify(compareLog,null,2)}</pre>
-
-`;
+html+=`</table>`;
 
 res.send(html);
 
