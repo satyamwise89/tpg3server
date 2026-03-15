@@ -133,11 +133,9 @@ tp.horses.forEach(h=>{
 const n=normalizeHorse(h.name);
 
 merged[n]={
-
 horse:h.name,
 tp:h.pnl,
 g3:0
-
 };
 
 });
@@ -155,11 +153,9 @@ const n=normalizeHorse(h.name);
 if(!merged[n]){
 
 merged[n]={
-
 horse:h.name,
 tp:0,
 g3:h.pnl
-
 };
 
 }else{
@@ -218,45 +214,35 @@ horses:[]
 };
 }
 
-/* scraped horses */
+/* update soda */
 
-const scraped=scrapedResults[raceTime];
+raceStore[raceTime][panel].soda=soda;
 
-if(!scraped){
-return res.json({status:"scraped result not ready"});
-}
+/* merge horses */
 
-const validNames=[
-scraped.winner,
-...(scraped.withdrawn||[])
-].map(normalizeHorse);
+horses.forEach(newHorse=>{
 
-/* filter only valid horses */
+const n=normalizeHorse(newHorse.name);
 
-let validHorses=[];
+const existing=raceStore[raceTime][panel].horses.find(h=>
+normalizeHorse(h.name)===n
+);
 
-horses.forEach(h=>{
+if(existing){
 
-const n=normalizeHorse(h.name);
+/* overwrite latest pnl */
 
-if(validNames.includes(n)){
-validHorses.push(h);
+existing.pnl=newHorse.pnl;
+
+}else{
+
+/* new horse add */
+
+raceStore[raceTime][panel].horses.push(newHorse);
+
 }
 
 });
-
-/* अगर कोई valid horse नहीं मिला तो पुराना data replace नहीं होगा */
-
-if(validHorses.length>0){
-
-raceStore[raceTime][panel]={
-
-soda,
-horses:validHorses
-
-};
-
-}
 
 browserLog[raceTime]=req.body;
 
