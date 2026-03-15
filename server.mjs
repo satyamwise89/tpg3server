@@ -33,26 +33,30 @@ let results={};
 
 $("div[id^='race-']").each((i,r)=>{
 
-// header example: "Race 1 - 4:00 PM"
+/* ---------- RACE TIME ---------- */
 
-const header=$(r).find("h3").text().trim();
-
-let raceTime="";
-
-const match=header.match(/\d{1,2}:\d{2}\s?(AM|PM)/i);
-
-if(match){
-raceTime=match[0].toUpperCase();
-}
+const raceTime=$(r)
+.find(".archive_time h4")
+.eq(1)
+.text()
+.trim()
+.toUpperCase();
 
 let winner="";
 let withdrawn=[];
+
+/* ---------- HORSE TABLE ---------- */
 
 $(r).find("tbody tr").each((i,row)=>{
 
 const pl=$(row).find("td").eq(0).text().trim();
 
-const horse=$(row).find("td").eq(2).text().trim().split("\n")[0].trim();
+const horse=$(row)
+.find("td")
+.eq(2)
+.find("h5 a")
+.text()
+.trim();
 
 const jockey=$(row).find("td").eq(5).text().trim();
 
@@ -60,7 +64,7 @@ if(pl==="1"){
 winner=horse;
 }
 
-if(jockey.toLowerCase().includes("withdrawn")){
+if(pl==="W" || jockey.toLowerCase().includes("withdrawn")){
 withdrawn.push(horse);
 }
 
@@ -112,6 +116,8 @@ const g3=raceStore[time]?.g3;
 
 let merged={};
 
+/* ---------- TP ---------- */
+
 if(tp){
 
 tp.horses.forEach(h=>{
@@ -126,6 +132,8 @@ g3:0
 });
 
 }
+
+/* ---------- G3 ---------- */
 
 if(g3){
 
@@ -149,6 +157,8 @@ merged[h.name].g3=h.pnl;
 });
 
 }
+
+/* ---------- FIND WINNER ---------- */
 
 let winnerHorse=scrapedResults[time]?.winner;
 
