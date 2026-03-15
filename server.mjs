@@ -7,6 +7,7 @@ import pkg from "pg";
 const { Pool } = pkg;
 
 const app = express();
+
 app.use(express.json());
 app.use(cors());
 
@@ -22,13 +23,14 @@ ssl: { rejectUnauthorized: false }
 let raceStore = {};
 let scrapedResults = {};
 let winnerReport = {};
-let compareLog = {};
 let browserLog = {};
+let compareLog = {};
 let lastScrapeTime = "";
 
 /* ---------- HORSE NORMALIZER ---------- */
 
 function normalizeHorse(name){
+
 if(!name) return "";
 
 return name
@@ -37,35 +39,46 @@ return name
 .replace(/[^a-z0-9 ]/g,"")
 .replace(/\s+/g," ")
 .trim();
+
 }
 
-/* ---------- DB INIT ---------- */
+/* ---------- INIT DATABASE ---------- */
 
 async function initDatabase(){
 
 await pool.query(`
+
 CREATE TABLE IF NOT EXISTS races (
+
 id SERIAL PRIMARY KEY,
 date TEXT,
 race_time TEXT,
 panel TEXT,
 soda INTEGER,
+
 UNIQUE(date,race_time,panel)
+
 );
+
 `);
 
 await pool.query(`
+
 CREATE TABLE IF NOT EXISTS horses (
+
 id SERIAL PRIMARY KEY,
 race_time TEXT,
 horse TEXT,
 tp_pnl INTEGER DEFAULT 0,
 g3_pnl INTEGER DEFAULT 0,
+
 UNIQUE(race_time,horse)
+
 );
+
 `);
 
-console.log("DATABASE READY");
+console.log("DATABASE TABLES READY");
 
 }
 
@@ -77,9 +90,9 @@ try{
 
 const url="https://www.indiarace.com/Home/racingCenterEvent?venueId=1&event_date=2026-03-12&race_type=RESULTS";
 
-const res=await axios.get(url);
+const res = await axios.get(url);
 
-const $=cheerio.load(res.data);
+const $ = cheerio.load(res.data);
 
 let results={};
 
@@ -106,18 +119,25 @@ const horse=$(row)
 .text()
 .trim();
 
+const jockey=$(row).find("td").eq(5).text().trim();
+
 if(pl==="1"){
 winner=horse;
 }
 
-if(pl==="W"){
+if(pl==="W" || jockey.toLowerCase().includes("withdrawn")){
 withdrawn.push(horse);
 }
 
 });
 
 if(raceTime){
-results[raceTime]={winner,withdrawn};
+
+results[raceTime]={
+winner,
+withdrawn
+};
+
 }
 
 });
@@ -126,11 +146,13 @@ scrapedResults=results;
 
 lastScrapeTime=new Date().toLocaleTimeString();
 
+console.log("SCRAPED RESULTS:",results);
+
 buildComparison();
 
 }catch(e){
 
-console.log("SCRAPER ERROR",e);
+console.log("SCRAPE ERROR:",e);
 
 }
 
@@ -151,7 +173,7 @@ const g3=raceStore[time]?.g3;
 
 let merged={};
 
-/* TP */
+/* ---------- TP ---------- */
 
 if(tp){
 
@@ -171,7 +193,7 @@ g3:0
 
 }
 
-/* G3 */
+/* ---------- G3 ---------- */
 
 if(g3){
 
@@ -199,7 +221,7 @@ merged[n].g3=h.pnl;
 
 }
 
-/* WINNER */
+/* ---------- WINNER ---------- */
 
 let winnerHorse=scrapedResults[time]?.winner;
 
@@ -232,46 +254,44 @@ compareLog[time]=merged;
 
 /* ---------- RECEIVE BROWSER DATA ---------- */
 
-app.post("/race-data", async(req,res)=>{
+app.post("/race-data",async(req,res)=>{
 
 const {panel,raceTime,soda,horses}=req.body;
 
 const today=new Date().toISOString().split("T")[0];
 
-if(!raceStore[raceTime]) raceStore[raceTime]={};
+if(!raceStore[raceTime]){
+raceStore[raceTime]={};
+}
 
 if(!raceStore[raceTime][panel]){
-
 raceStore[raceTime][panel]={
 
 soda:0,
 horses:[]
 
 };
-
 }
-
-/* update soda */
 
 raceStore[raceTime][panel].soda=soda;
 
 /* merge horses */
 
-horses.forEach(h=>{
+horses.forEach(newHorse=>{
 
-const n=normalizeHorse(h.name);
+const n=normalizeHorse(newHorse.name);
 
-const existing=raceStore[raceTime][panel].horses.find(x=>
-normalizeHorse(x.name)===n
+const existing=raceStore[raceTime][panel].horses.find(h=>
+normalizeHorse(h.name)===n
 );
 
 if(existing){
 
-existing.pnl=h.pnl;
+existing.pnl=newHorse.pnl;
 
 }else{
 
-raceStore[raceTime][panel].horses.push(h);
+raceStore[raceTime][panel].horses.push(newHorse);
 
 }
 
@@ -316,9 +336,67 @@ panel==="g3"?h.pnl:0
 
 browserLog[raceTime]=req.body;
 
+console.log("DATA RECEIVED:",raceTime,panel);
+
 buildComparison();
 
 res.json({status:"ok"});
+
+});
+
+/* ---------- TEST MODE ---------- */
+
+app.post("/test",(req,res)=>{
+
+const {horse,raceTime,pnl,soda,panel}=req.body;
+
+if(!raceStore[raceTime]){
+raceStore[raceTime]={};
+}
+
+const side = panel === "g3" ? "g3" : "tp";
+
+raceStore[raceTime][side]={
+
+soda:Number(soda)||0,
+
+horses:[
+{
+name:horse,
+pnl:Number(pnl)||0
+}
+]
+
+};
+
+buildComparison();
+
+const result=scrapedResults[raceTime];
+
+let winner=false;
+
+if(result){
+
+const h=normalizeHorse(horse);
+const w=normalizeHorse(result.winner);
+
+if(h===w){
+winner=true;
+}
+
+}
+
+res.json({
+
+horse,
+raceTime,
+pnl,
+soda,
+panel:side,
+winner,
+scrapedWinner:result?.winner||null
+
+});
 
 });
 
@@ -377,7 +455,7 @@ html+=`
 
 html+="</table>";
 
-/* DEBUG */
+/* ---------- DEBUG ---------- */
 
 html+=`
 
@@ -388,10 +466,10 @@ html+=`
 <h4>Browser Data</h4>
 <pre>${JSON.stringify(browserLog,null,2)}</pre>
 
-<h4>Scraped</h4>
+<h4>Scraped Data</h4>
 <pre>${JSON.stringify(scrapedResults,null,2)}</pre>
 
-<h4>Compare</h4>
+<h4>Comparison Data</h4>
 <pre>${JSON.stringify(compareLog,null,2)}</pre>
 
 `;
@@ -414,9 +492,9 @@ res.send(`
 
 });
 
-/* ---------- SERVER START ---------- */
+/* ---------- SERVER ---------- */
 
-const PORT=process.env.PORT||3000;
+const PORT=process.env.PORT || 3000;
 
 async function startServer(){
 
