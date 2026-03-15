@@ -234,7 +234,7 @@ res.json({status:"ok"});
 
 });
 
-/* ---------- TEST MODE (NOW ADDS DATA INTO COMPARISON) ---------- */
+/* ---------- TEST MODE ---------- */
 
 app.post("/test",(req,res)=>{
 
@@ -248,12 +248,12 @@ const side = panel === "g3" ? "g3" : "tp";
 
 raceStore[raceTime][side]={
 
-soda: Number(soda) || 0,
+soda:Number(soda)||0,
 
 horses:[
 {
 name:horse,
-pnl:Number(pnl) || 0
+pnl:Number(pnl)||0
 }
 ]
 
@@ -284,16 +284,13 @@ pnl,
 soda,
 panel:side,
 winner,
-scrapedWinner:result?.winner || null,
-message:"Test data inserted"
+scrapedWinner:result?.winner||null
 
 });
 
 });
 
-/* ---------- SUPER DASHBOARD ---------- */
-
-/* ---------- SUPER DASHBOARD ---------- */
+/* ---------- DASHBOARD ---------- */
 
 app.get("/dashboard",(req,res)=>{
 
@@ -310,10 +307,10 @@ Object.keys(compareLog).forEach(time=>{
 const horses=compareLog[time];
 const winner=winnerReport[time]?.horse;
 
-const tpSoda=raceStore[time]?.tp?.soda || 0;
-const g3Soda=raceStore[time]?.g3?.soda || 0;
+const tpSoda=raceStore[time]?.tp?.soda||0;
+const g3Soda=raceStore[time]?.g3?.soda||0;
 
-const withdrawnList=scrapedResults[time]?.withdrawn || [];
+const withdrawnList=scrapedResults[time]?.withdrawn||[];
 
 html+=`<h2>Race ${time}</h2>`;
 
@@ -339,8 +336,8 @@ let i=1;
 
 Object.values(horses).forEach(h=>{
 
-const isWithdrawn = withdrawnList.some(w =>
-normalizeHorse(w) === normalizeHorse(h.horse)
+const isWithdrawn=withdrawnList.some(w=>
+normalizeHorse(w)===normalizeHorse(h.horse)
 );
 
 let rowStyle="";
@@ -362,7 +359,7 @@ html+=`
 <td>${g3Soda}</td>
 <td>${h.tp}</td>
 <td>${h.g3}</td>
-<td>${isWithdrawn ? "YES" : ""}</td>
+<td>${isWithdrawn?"YES":""}</td>
 
 </tr>
 
@@ -373,30 +370,6 @@ i++;
 });
 
 html+="</table>";
-
-});
-
-/* ---------- DEBUG ---------- */
-
-html+=`
-
-<hr>
-
-<h2>Browser Data</h2>
-
-<pre>${JSON.stringify(browserLog,null,2)}</pre>
-
-<h2>Scraped Data</h2>
-
-<pre>${JSON.stringify(scrapedResults,null,2)}</pre>
-
-<h2>Comparison Data</h2>
-
-<pre>${JSON.stringify(compareLog,null,2)}</pre>
-
-`;
-
-res.send(html);
 
 });
 
@@ -440,7 +413,7 @@ res.send(`
 
 /* ---------- SERVER ---------- */
 
-const PORT=process.env.PORT || 3000;
+const PORT=process.env.PORT||3000;
 
 app.listen(PORT,()=>{
 
