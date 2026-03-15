@@ -96,6 +96,19 @@ return name
 
 }
 
+/* ---------- TIME NORMALIZER ---------- */
+
+function normalizeTime(t){
+
+if(!t) return "";
+
+return t
+.toUpperCase()
+.replace(/\s+/g,"")
+.replace(/^0/,"");
+
+}
+
 /* ---------- INIT DATABASE ---------- */
 
 async function initDatabase(){
@@ -103,14 +116,12 @@ async function initDatabase(){
 await pool.query(`
 
 CREATE TABLE IF NOT EXISTS races(
-
 id SERIAL PRIMARY KEY,
 date TEXT,
 race_time TEXT,
 panel TEXT,
 soda INTEGER,
 UNIQUE(date,race_time,panel)
-
 );
 
 `);
@@ -118,14 +129,12 @@ UNIQUE(date,race_time,panel)
 await pool.query(`
 
 CREATE TABLE IF NOT EXISTS horses(
-
 id SERIAL PRIMARY KEY,
 race_time TEXT,
 horse TEXT,
 tp_pnl INTEGER DEFAULT 0,
 g3_pnl INTEGER DEFAULT 0,
 UNIQUE(race_time,horse)
-
 );
 
 `);
@@ -214,10 +223,8 @@ async function scrapeResults(){
 try{
 
 if(!activeVenues.length){
-
 console.log("NO ACTIVE VENUES");
 return;
-
 }
 
 const date=todayDate();
@@ -230,8 +237,7 @@ for(const v of activeVenues){
 
 await delay(2000);
 
-const url=
-`https://www.indiarace.com/Home/racingCenterEvent?venueId=${v.id}&event_date=${date}&race_type=RESULTS`;
+const url=`https://www.indiarace.com/Home/racingCenterEvent?venueId=${v.id}&event_date=${date}&race_type=RESULTS`;
 
 scrapeUrlsLog.push(url);
 
@@ -305,8 +311,8 @@ console.log("SCRAPE ERROR",e);
 
 /* ---------- AUTO SCRAPE ---------- */
 
-setInterval(updateVenues,600000); // 10 min
-setInterval(scrapeResults,180000); // 3 min
+setInterval(updateVenues,600000);
+setInterval(scrapeResults,180000);
 
 /* ---------- BUILD COMPARISON ---------- */
 
@@ -338,20 +344,26 @@ g3.horses.forEach(h=>{
 const n=normalizeHorse(h.name);
 
 if(!merged[n]){
-
 merged[n]={horse:h.name,tp:0,g3:h.pnl};
-
 }else{
-
 merged[n].g3=h.pnl;
-
 }
 
 });
 
 }
 
-let winnerHorse=scrapedResults[time]?.winner;
+/* match race time */
+
+let winnerHorse=null;
+
+Object.keys(scrapedResults).forEach(st=>{
+
+if(normalizeTime(st)===normalizeTime(time)){
+winnerHorse=scrapedResults[st].winner;
+}
+
+});
 
 let winnerData=null;
 
@@ -419,14 +431,11 @@ raceStore[raceTime][panel].horses.push(newHorse);
 });
 
 await pool.query(
-
 `INSERT INTO races(date,race_time,panel,soda)
 VALUES($1,$2,$3,$4)
 ON CONFLICT (date,race_time,panel)
 DO UPDATE SET soda=$4`,
-
 [today,raceTime,panel,soda]
-
 );
 
 browserLog[raceTime]=req.body;
@@ -541,9 +550,7 @@ const PORT=process.env.PORT || 3000;
 async function startServer(){
 
 await initDatabase();
-
 await updateVenues();
-
 await scrapeResults();
 
 app.listen(PORT,()=>{
