@@ -57,10 +57,6 @@ let activeVenues=[];
 let lastVenueUpdate="";
 let lastScrapeTime="";
 
-/* ---------- REQUEST LOCK ---------- */
-
-let requestLock=false;
-
 /* ---------- STATE SAVE/LOAD ---------- */
 
 function saveState(){
@@ -105,7 +101,7 @@ try{
 await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`,{
 chat_id: CHAT_ID,
 text: msg,
-parse_mode: "Markdown"
+parse_mode: "HTML"
 });
 }catch(e){
 console.log("Telegram Error", e.message);
@@ -205,18 +201,13 @@ return[];
 /* ---------- UPDATE VENUES ---------- */
 
 async function updateVenues(){
-try{
 activeVenues=await detectVenues();
 lastVenueUpdate=indiaTime();
-}catch(e){
-console.log("UPDATE ERROR",e);
-}
 }
 
 /* ---------- SCRAPE RESULTS ---------- */
 
 async function scrapeResults(){
-try{
 
 if(!activeVenues.length) return;
 
@@ -240,44 +231,28 @@ $("div[id^='race-']").each((i,r)=>{
 const raceTime=$(r).find(".archive_time h4").eq(1).text().trim().toUpperCase();
 
 let winner="";
-let withdrawn=[];
 
 $(r).find("tbody tr").each((i,row)=>{
-
 const pl=$(row).find("td").eq(0).text().trim();
 const horse=$(row).find("td").eq(2).find("h5 a").text().trim();
-const jockey=$(row).find("td").eq(5).text().trim();
-
 if(pl==="1") winner=horse;
-
-if(pl==="W" || jockey.toLowerCase().includes("withdrawn")){
-withdrawn.push(horse);
-}
-
 });
 
 if(raceTime){
-results[raceTime]={winner,withdrawn,venue:v.name};
+results[raceTime]={winner,venue:v.name};
 }
 
 });
 
 }
 
-/* overwrite only if valid */
 if(Object.keys(results).length>0){
 scrapedResults=results;
 lastScrapeTime=indiaTime();
-}else{
-console.log("⚠️ Empty scrape ignored");
 }
 
 buildComparison();
 saveState();
-
-}catch(e){
-console.log("SCRAPE ERROR",e);
-}
 }
 
 /* ---------- AUTO ---------- */
@@ -334,7 +309,7 @@ g3Pnl:merged[wn].g3
 winnerReport[time]=winnerData;
 compareLog[time]=merged;
 
-/* ---------- TELEGRAM ALERT ---------- */
+/* ---------- TELEGRAM ---------- */
 
 if(winnerData){
 
@@ -342,17 +317,22 @@ const key = time + "_" + winnerData.horse;
 
 if(!sentRaces[key]){
 
+const tpSoda = raceStore[time]?.tp?.soda || 0;
+const g3Soda = raceStore[time]?.g3?.soda || 0;
+
 const msg = `
+<pre>
 🏁 TP + G3 RESULT
 
 Time      Horse         TP Soda   G3 Soda   TP        G3
 ----------------------------------------------------------
 ${time.padEnd(9)} ${winnerData.horse.padEnd(12)} ${String(tpSoda).padEnd(8)} ${String(g3Soda).padEnd(8)} ${String(winnerData.tpPnl).padEnd(9)} ${String(winnerData.g3Pnl)}
+</pre>
 `;
 
 sendTelegram(msg);
 
-sentRaces[key] = true;
+sentRaces[key]=true;
 saveState();
 
 }
@@ -365,15 +345,7 @@ saveState();
 
 /* ---------- RECEIVE DATA ---------- */
 
-app.post("/race-data",async(req,res)=>{
-
-if(requestLock){
-return res.json({status:"busy"});
-}
-
-requestLock=true;
-
-try{
+app.post("/race-data",(req,res)=>{
 
 const {panel,raceTime,soda,horses}=req.body;
 
@@ -386,64 +358,18 @@ raceStore[raceTime][panel]={soda:0,horses:[]};
 raceStore[raceTime][panel].soda=soda;
 
 if(horses && horses.length>0){
-horses.forEach(newHorse=>{
-const n=normalizeHorse(newHorse.name);
-
-const existing=raceStore[raceTime][panel].horses.find(
-h=>normalizeHorse(h.name)===n
-);
-
-if(existing) existing.pnl=newHorse.pnl;
-else raceStore[raceTime][panel].horses.push(newHorse);
+horses.forEach(h=>{
+const n=normalizeHorse(h.name);
+const ex=raceStore[raceTime][panel].horses.find(x=>normalizeHorse(x.name)===n);
+if(ex) ex.pnl=h.pnl;
+else raceStore[raceTime][panel].horses.push(h);
 });
 }
-
-browserLog[raceTime]=req.body;
 
 buildComparison();
 saveState();
 
 res.json({status:"ok"});
-
-}catch(e){
-console.log("RACE DATA ERROR",e);
-res.json({status:"error"});
-}
-
-requestLock=false;
-
-});
-
-/* ---------- DASHBOARD ---------- */
-
-app.get("/dashboard",(req,res)=>{
-
-let html=`<h1>TP + G3 Dashboard</h1>
-<p>Last Scrape: ${lastScrapeTime}</p>
-<p>Last Venue Update: ${lastVenueUpdate}</p>
-<meta http-equiv="refresh" content="5">
-<table border="1">
-<tr>
-<th>Time</th><th>Horse</th><th>TP Soda</th><th>G3 Soda</th><th>TP</th><th>G3</th>
-</tr>`;
-
-Object.keys(winnerReport).forEach(time=>{
-const w=winnerReport[time];
-if(!w) return;
-
-html+=`<tr style="background:lightgreen">
-<td>${time}</td>
-<td>${w.horse}</td>
-<td>${raceStore[time]?.tp?.soda||0}</td>
-<td>${raceStore[time]?.g3?.soda||0}</td>
-<td>${w.tpPnl}</td>
-<td>${w.g3Pnl}</td>
-</tr>`;
-});
-
-html+=`</table><hr><pre>${JSON.stringify(compareLog,null,2)}</pre>`;
-
-res.send(html);
 
 });
 
@@ -452,16 +378,13 @@ res.send(html);
 const PORT=process.env.PORT || 3000;
 
 async function startServer(){
-
 await initDatabase();
 loadState();
-
 await updateVenues();
 await scrapeResults();
 
 app.listen(PORT,()=>console.log("SERVER RUNNING",PORT));
-
 }
 
 startServer();
-sendTelegram("TEST MESSAGE");
+sendTelegram("✅ TELEGRAM CONNECTED");
