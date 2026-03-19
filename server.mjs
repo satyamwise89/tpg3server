@@ -39,18 +39,6 @@ connectionString: process.env.DATABASE_URL,
 ssl:{rejectUnauthorized:false}
 });
 
-/* ---------- VENUE MAP ---------- */
-
-const VENUES={
-bangalore:3,
-mysore:8,
-mumbai:2,
-pune:10,
-hyderabad:11,
-kolkata:1,
-chennai:4
-};
-
 /* ---------- MEMORY ---------- */
 
 let raceStore={};
@@ -65,7 +53,6 @@ let lastScrapeTime="";
 /* ---------- STATE ---------- */
 
 function saveState(){
-try{
 fs.writeFileSync("state.json",JSON.stringify({
 raceStore,
 scrapedResults,
@@ -75,9 +62,6 @@ lastScrapeTime,
 lastVenueUpdate,
 sentRaces
 }));
-}catch(e){
-console.log("SAVE ERROR",e.message);
-}
 }
 
 function loadState(){
@@ -93,8 +77,7 @@ lastVenueUpdate=d.lastVenueUpdate||"";
 sentRaces=d.sentRaces||{};
 
 console.log("✅ STATE RESTORED");
-
-}catch(e){
+}catch{
 console.log("No old state");
 }
 }
@@ -104,7 +87,7 @@ console.log("No old state");
 async function sendTelegram(msg){
 
 if(!TELEGRAM_TOKEN || !CHAT_ID){
-console.log("⚠️ Telegram env missing");
+console.log("⚠️ Telegram not configured");
 return;
 }
 
@@ -135,8 +118,7 @@ return new Date().toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata"});
 }
 
 function normalizeHorse(name){
-if(!name) return "";
-return name.toLowerCase()
+return (name||"").toLowerCase()
 .replace(/^\d+\.\s*/,"")
 .replace(/\(.*?\)/g,"")
 .replace(/[^a-z ]/g,"")
@@ -145,8 +127,7 @@ return name.toLowerCase()
 }
 
 function normalizeTime(t){
-if(!t) return "";
-return t.toUpperCase()
+return (t||"").toUpperCase()
 .replace(/\s+/g,"")
 .replace(/^0/,"")
 .replace(":00","");
@@ -154,9 +135,19 @@ return t.toUpperCase()
 
 /* ---------- VENUES ---------- */
 
+const VENUES={
+bangalore:3,
+mysore:8,
+mumbai:2,
+pune:10,
+hyderabad:11,
+kolkata:1,
+chennai:4
+};
+
 async function detectVenues(){
 try{
-const res=await axios.get("https://www.indiarace.com/",{timeout:10000});
+const res=await axios.get("https://www.indiarace.com/");
 const $=cheerio.load(res.data);
 
 let found=[];
@@ -172,9 +163,8 @@ found.push({name:v,id:VENUES[v]});
 
 return found.filter((v,i,self)=>i===self.findIndex(t=>t.id===v.id));
 
-}catch(e){
-console.log("VENUE ERROR",e.message);
-return[];
+}catch{
+return [];
 }
 }
 
@@ -187,8 +177,6 @@ lastVenueUpdate=indiaTime();
 
 async function scrapeResults(){
 
-try{
-
 if(!activeVenues.length) return;
 
 const date=todayDate();
@@ -200,7 +188,7 @@ await delay(2000);
 
 const url=`https://www.indiarace.com/Home/racingCenterEvent?venueId=${v.id}&event_date=${date}&race_type=RESULTS`;
 
-const res=await axios.get(url,{timeout:10000});
+const res=await axios.get(url);
 const $=cheerio.load(res.data);
 
 $("div[id^='race-']").each((i,r)=>{
@@ -223,7 +211,6 @@ results[raceTime]={winner};
 
 }
 
-/* overwrite only if valid */
 if(Object.keys(results).length>0){
 scrapedResults=results;
 lastScrapeTime=indiaTime();
@@ -231,11 +218,6 @@ lastScrapeTime=indiaTime();
 
 buildComparison();
 saveState();
-
-}catch(e){
-console.log("SCRAPE ERROR",e.message);
-}
-
 }
 
 /* ---------- AUTO ---------- */
@@ -268,6 +250,7 @@ else merged[n].g3=h.pnl;
 });
 }
 
+/* winner match */
 let winnerHorse=null;
 
 Object.keys(scrapedResults).forEach(st=>{
@@ -292,18 +275,23 @@ g3Pnl:merged[wn].g3
 winnerReport[time]=winnerData;
 compareLog[time]=merged;
 
-/* ---------- TELEGRAM ---------- */
+/* ---------- SMART TELEGRAM ---------- */
 
-if(winnerData){
+const tpReady = tp?.horses?.length > 0;
+const g3Ready = g3?.horses?.length > 0;
 
-const key=time+"_"+winnerData.horse;
+if(winnerData && tpReady && g3Ready){
+
+const key = time + "_" + winnerData.horse;
 
 if(!sentRaces[key]){
 
-const tpSoda=raceStore[time]?.tp?.soda||0;
-const g3Soda=raceStore[time]?.g3?.soda||0;
+const tpSoda = tp?.soda || 0;
+const g3Soda = g3?.soda || 0;
 
-const msg=`
+console.log("📤 Sending Telegram:", time);
+
+const msg = `
 <pre>
 🏁 TP + G3 RESULT
 
