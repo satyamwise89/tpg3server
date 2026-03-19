@@ -16,12 +16,15 @@ methods:["GET","POST"],
 allowedHeaders:["Content-Type"]
 }));
 
+/* ---------- HOME ---------- */
+
 app.get("/",(req,res)=>{
 res.send(`
 <h2>✅ Server Running</h2>
 <a href="/dashboard">Open Dashboard</a>
 `);
 });
+
 /* ---------- TELEGRAM ---------- */
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
@@ -53,17 +56,13 @@ chennai:4
 let raceStore={};
 let scrapedResults={};
 let winnerReport={};
-let browserLog={};
 let compareLog={};
-
-let detectedVenuesLog=[];
-let scrapeUrlsLog=[];
 
 let activeVenues=[];
 let lastVenueUpdate="";
 let lastScrapeTime="";
 
-/* ---------- STATE SAVE/LOAD ---------- */
+/* ---------- STATE ---------- */
 
 function saveState(){
 try{
@@ -77,7 +76,7 @@ lastVenueUpdate,
 sentRaces
 }));
 }catch(e){
-console.log("SAVE ERROR",e);
+console.log("SAVE ERROR",e.message);
 }
 }
 
@@ -100,9 +99,15 @@ console.log("No old state");
 }
 }
 
-/* ---------- TELEGRAM FUNCTION ---------- */
+/* ---------- TELEGRAM ---------- */
 
 async function sendTelegram(msg){
+
+if(!TELEGRAM_TOKEN || !CHAT_ID){
+console.log("⚠️ Telegram env missing");
+return;
+}
+
 try{
 await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`,{
 chat_id: CHAT_ID,
@@ -110,7 +115,7 @@ text: msg,
 parse_mode: "HTML"
 });
 }catch(e){
-console.log("Telegram Error", e.message);
+console.log("Telegram Error:", e.message);
 }
 }
 
@@ -147,35 +152,7 @@ return t.toUpperCase()
 .replace(":00","");
 }
 
-/* ---------- INIT DATABASE ---------- */
-
-async function initDatabase(){
-await pool.query(`
-CREATE TABLE IF NOT EXISTS races(
-id SERIAL PRIMARY KEY,
-date TEXT,
-race_time TEXT,
-panel TEXT,
-soda INTEGER,
-UNIQUE(date,race_time,panel)
-);
-`);
-
-await pool.query(`
-CREATE TABLE IF NOT EXISTS horses(
-id SERIAL PRIMARY KEY,
-race_time TEXT,
-horse TEXT,
-tp_pnl INTEGER DEFAULT 0,
-g3_pnl INTEGER DEFAULT 0,
-UNIQUE(race_time,horse)
-);
-`);
-
-console.log("DATABASE READY");
-}
-
-/* ---------- DETECT VENUES ---------- */
+/* ---------- VENUES ---------- */
 
 async function detectVenues(){
 try{
@@ -193,41 +170,35 @@ found.push({name:v,id:VENUES[v]});
 }
 });
 
-found=found.filter((v,i,self)=>i===self.findIndex(t=>t.id===v.id));
-detectedVenuesLog=found;
-
-return found;
+return found.filter((v,i,self)=>i===self.findIndex(t=>t.id===v.id));
 
 }catch(e){
-console.log("VENUE ERROR",e);
+console.log("VENUE ERROR",e.message);
 return[];
 }
 }
-
-/* ---------- UPDATE VENUES ---------- */
 
 async function updateVenues(){
 activeVenues=await detectVenues();
 lastVenueUpdate=indiaTime();
 }
 
-/* ---------- SCRAPE RESULTS ---------- */
+/* ---------- SCRAPER ---------- */
 
 async function scrapeResults(){
+
+try{
 
 if(!activeVenues.length) return;
 
 const date=todayDate();
 let results={};
 
-scrapeUrlsLog=[];
-
 for(const v of activeVenues){
 
 await delay(2000);
 
 const url=`https://www.indiarace.com/Home/racingCenterEvent?venueId=${v.id}&event_date=${date}&race_type=RESULTS`;
-scrapeUrlsLog.push(url);
 
 const res=await axios.get(url,{timeout:10000});
 const $=cheerio.load(res.data);
@@ -245,13 +216,14 @@ if(pl==="1") winner=horse;
 });
 
 if(raceTime){
-results[raceTime]={winner,venue:v.name};
+results[raceTime]={winner};
 }
 
 });
 
 }
 
+/* overwrite only if valid */
 if(Object.keys(results).length>0){
 scrapedResults=results;
 lastScrapeTime=indiaTime();
@@ -259,6 +231,11 @@ lastScrapeTime=indiaTime();
 
 buildComparison();
 saveState();
+
+}catch(e){
+console.log("SCRAPE ERROR",e.message);
+}
+
 }
 
 /* ---------- AUTO ---------- */
@@ -266,7 +243,7 @@ saveState();
 setInterval(updateVenues,600000);
 setInterval(scrapeResults,180000);
 
-/* ---------- BUILD COMPARISON ---------- */
+/* ---------- COMPARISON ---------- */
 
 function buildComparison(){
 
@@ -319,14 +296,14 @@ compareLog[time]=merged;
 
 if(winnerData){
 
-const key = time + "_" + winnerData.horse;
+const key=time+"_"+winnerData.horse;
 
 if(!sentRaces[key]){
 
-const tpSoda = raceStore[time]?.tp?.soda || 0;
-const g3Soda = raceStore[time]?.g3?.soda || 0;
+const tpSoda=raceStore[time]?.tp?.soda||0;
+const g3Soda=raceStore[time]?.g3?.soda||0;
 
-const msg = `
+const msg=`
 <pre>
 🏁 TP + G3 RESULT
 
@@ -349,7 +326,7 @@ saveState();
 
 }
 
-/* ---------- RECEIVE DATA ---------- */
+/* ---------- API ---------- */
 
 app.post("/race-data",(req,res)=>{
 
@@ -363,7 +340,7 @@ raceStore[raceTime][panel]={soda:0,horses:[]};
 
 raceStore[raceTime][panel].soda=soda;
 
-if(horses && horses.length>0){
+if(horses){
 horses.forEach(h=>{
 const n=normalizeHorse(h.name);
 const ex=raceStore[raceTime][panel].horses.find(x=>normalizeHorse(x.name)===n);
@@ -376,6 +353,35 @@ buildComparison();
 saveState();
 
 res.json({status:"ok"});
+});
+
+/* ---------- DASHBOARD ---------- */
+
+app.get("/dashboard",(req,res)=>{
+
+let html=`<h1>TP + G3 Dashboard</h1>
+<p>Last Scrape: ${lastScrapeTime}</p>
+<p>Last Venue Update: ${lastVenueUpdate}</p>
+<meta http-equiv="refresh" content="5">
+<table border="1">
+<tr><th>Time</th><th>Horse</th><th>TP Soda</th><th>G3 Soda</th><th>TP</th><th>G3</th></tr>`;
+
+Object.keys(winnerReport).forEach(time=>{
+const w=winnerReport[time];
+if(!w) return;
+
+html+=`<tr style="background:lightgreen">
+<td>${time}</td>
+<td>${w.horse}</td>
+<td>${raceStore[time]?.tp?.soda||0}</td>
+<td>${raceStore[time]?.g3?.soda||0}</td>
+<td>${w.tpPnl}</td>
+<td>${w.g3Pnl}</td>
+</tr>`;
+});
+
+html+=`</table>`;
+res.send(html);
 
 });
 
@@ -384,12 +390,11 @@ res.json({status:"ok"});
 const PORT=process.env.PORT || 3000;
 
 async function startServer(){
-await initDatabase();
 loadState();
 await updateVenues();
 await scrapeResults();
 
-app.listen(PORT,()=>console.log("SERVER RUNNING",PORT));
+app.listen(PORT,()=>console.log("🚀 SERVER RUNNING ON",PORT));
 }
 
 startServer();
