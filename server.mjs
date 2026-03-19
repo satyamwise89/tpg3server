@@ -16,6 +16,12 @@ methods:["GET","POST"],
 allowedHeaders:["Content-Type"]
 }));
 
+app.get("/",(req,res)=>{
+res.send(`
+<h2>✅ Server Running</h2>
+<a href="/dashboard">Open Dashboard</a>
+`);
+});
 /* ---------- TELEGRAM ---------- */
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
