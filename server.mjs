@@ -10,12 +10,18 @@ const { Pool } = pkg;
 const app = express();
 
 app.use(express.json());
-
 app.use(cors({
 origin:"*",
 methods:["GET","POST"],
 allowedHeaders:["Content-Type"]
 }));
+
+/* ---------- TELEGRAM ---------- */
+
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+const CHAT_ID = process.env.CHAT_ID;
+
+let sentRaces = {};
 
 /* ---------- DATABASE ---------- */
 
@@ -65,7 +71,8 @@ scrapedResults,
 winnerReport,
 compareLog,
 lastScrapeTime,
-lastVenueUpdate
+lastVenueUpdate,
+sentRaces
 }));
 }catch(e){
 console.log("SAVE ERROR",e);
@@ -82,11 +89,26 @@ winnerReport=d.winnerReport||{};
 compareLog=d.compareLog||{};
 lastScrapeTime=d.lastScrapeTime||"";
 lastVenueUpdate=d.lastVenueUpdate||"";
+sentRaces=d.sentRaces||{};
 
 console.log("✅ STATE RESTORED");
 
 }catch(e){
 console.log("No old state");
+}
+}
+
+/* ---------- TELEGRAM FUNCTION ---------- */
+
+async function sendTelegram(msg){
+try{
+await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`,{
+chat_id: CHAT_ID,
+text: msg,
+parse_mode: "Markdown"
+});
+}catch(e){
+console.log("Telegram Error", e.message);
 }
 }
 
@@ -96,20 +118,14 @@ function delay(ms){
 return new Promise(r=>setTimeout(r,ms));
 }
 
-/* ---------- DATE (INDIA) ---------- */
-
 function todayDate(){
 const d=new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Kolkata"}));
 return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
-/* ---------- INDIA TIME ---------- */
-
 function indiaTime(){
 return new Date().toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata"});
 }
-
-/* ---------- HORSE NORMALIZER ---------- */
 
 function normalizeHorse(name){
 if(!name) return "";
@@ -121,14 +137,12 @@ return name.toLowerCase()
 .trim();
 }
 
-/* ---------- TIME NORMALIZER (IMPROVED) ---------- */
-
 function normalizeTime(t){
 if(!t) return "";
 return t.toUpperCase()
 .replace(/\s+/g,"")
 .replace(/^0/,"")
-.replace(":00",""); // important fix
+.replace(":00","");
 }
 
 /* ---------- INIT DATABASE ---------- */
@@ -231,9 +245,7 @@ let withdrawn=[];
 $(r).find("tbody tr").each((i,row)=>{
 
 const pl=$(row).find("td").eq(0).text().trim();
-
 const horse=$(row).find("td").eq(2).find("h5 a").text().trim();
-
 const jockey=$(row).find("td").eq(5).text().trim();
 
 if(pl==="1") winner=horse;
@@ -252,7 +264,7 @@ results[raceTime]={winner,withdrawn,venue:v.name};
 
 }
 
-/* ✅ EMPTY OVERWRITE PROTECTION */
+/* overwrite only if valid */
 if(Object.keys(results).length>0){
 scrapedResults=results;
 lastScrapeTime=indiaTime();
@@ -322,6 +334,33 @@ g3Pnl:merged[wn].g3
 winnerReport[time]=winnerData;
 compareLog[time]=merged;
 
+/* ---------- TELEGRAM ALERT ---------- */
+
+if(winnerData){
+
+const key = time + "_" + winnerData.horse;
+
+if(!sentRaces[key]){
+
+const msg = `
+🏁 *RACE RESULT*
+
+⏰ Time: ${time}
+🐎 Winner: *${winnerData.horse}*
+
+📊 TP PNL: ${winnerData.tpPnl}
+📊 G3 PNL: ${winnerData.g3Pnl}
+`;
+
+sendTelegram(msg);
+
+sentRaces[key] = true;
+saveState();
+
+}
+
+}
+
 });
 
 }
@@ -346,14 +385,10 @@ if(!raceStore[raceTime][panel]){
 raceStore[raceTime][panel]={soda:0,horses:[]};
 }
 
-/* overwrite soda */
 raceStore[raceTime][panel].soda=soda;
 
-/* ❌ empty overwrite fix */
 if(horses && horses.length>0){
-
 horses.forEach(newHorse=>{
-
 const n=normalizeHorse(newHorse.name);
 
 const existing=raceStore[raceTime][panel].horses.find(
@@ -362,9 +397,7 @@ h=>normalizeHorse(h.name)===n
 
 if(existing) existing.pnl=newHorse.pnl;
 else raceStore[raceTime][panel].horses.push(newHorse);
-
 });
-
 }
 
 browserLog[raceTime]=req.body;
@@ -375,10 +408,8 @@ saveState();
 res.json({status:"ok"});
 
 }catch(e){
-
 console.log("RACE DATA ERROR",e);
 res.json({status:"error"});
-
 }
 
 requestLock=false;
@@ -425,7 +456,7 @@ const PORT=process.env.PORT || 3000;
 async function startServer(){
 
 await initDatabase();
-loadState();   // 🔥 important
+loadState();
 
 await updateVenues();
 await scrapeResults();
