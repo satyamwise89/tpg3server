@@ -343,13 +343,11 @@ const key = time + "_" + winnerData.horse;
 if(!sentRaces[key]){
 
 const msg = `
-🏁 *RACE RESULT*
+🏁 TP + G3 RESULT
 
-⏰ Time: ${time}
-🐎 Winner: *${winnerData.horse}*
-
-📊 TP PNL: ${winnerData.tpPnl}
-📊 G3 PNL: ${winnerData.g3Pnl}
+Time      Horse         TP Soda   G3 Soda   TP        G3
+----------------------------------------------------------
+${time.padEnd(9)} ${winnerData.horse.padEnd(12)} ${String(tpSoda).padEnd(8)} ${String(g3Soda).padEnd(8)} ${String(winnerData.tpPnl).padEnd(9)} ${String(winnerData.g3Pnl)}
 `;
 
 sendTelegram(msg);
