@@ -30,7 +30,7 @@ res.send(`
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 
-let sentRaces = {};
+let lastSentHash = "";
 
 /* ---------- DATABASE ---------- */
 
@@ -60,7 +60,7 @@ winnerReport,
 compareLog,
 lastScrapeTime,
 lastVenueUpdate,
-sentRaces
+lastSentHash
 }));
 }
 
@@ -74,7 +74,7 @@ winnerReport=d.winnerReport||{};
 compareLog=d.compareLog||{};
 lastScrapeTime=d.lastScrapeTime||"";
 lastVenueUpdate=d.lastVenueUpdate||"";
-sentRaces=d.sentRaces||{};
+lastSentHash=d.lastSentHash||"";
 
 console.log("✅ STATE RESTORED");
 }catch{
@@ -275,42 +275,65 @@ g3Pnl:merged[wn].g3
 winnerReport[time]=winnerData;
 compareLog[time]=merged;
 
-/* ---------- SMART TELEGRAM ---------- */
+});
 
-const tpReady = tp?.horses?.length > 0;
-const g3Ready = g3?.horses?.length > 0;
+/* ---------- FULL TABLE TELEGRAM ---------- */
 
-if(winnerData && tpReady && g3Ready){
+let rows = [];
 
-const key = time + "_" + winnerData.horse;
+Object.keys(winnerReport).forEach(t=>{
 
-if(!sentRaces[key]){
+const w = winnerReport[t];
+if(!w) return;
 
-const tpSoda = tp?.soda || 0;
-const g3Soda = g3?.soda || 0;
+const tpReady = raceStore[t]?.tp?.horses?.length > 0;
+const g3Ready = raceStore[t]?.g3?.horses?.length > 0;
 
-console.log("📤 Sending Telegram:", time);
+if(tpReady && g3Ready){
 
-const msg = `
+rows.push({
+time: t,
+horse: w.horse,
+tpSoda: raceStore[t]?.tp?.soda || 0,
+g3Soda: raceStore[t]?.g3?.soda || 0,
+tp: w.tpPnl,
+g3: w.g3Pnl
+});
+
+}
+
+});
+
+if(rows.length > 0){
+
+let table = `
 <pre>
 🏁 TP + G3 RESULT
 
 Time      Horse         TP Soda   G3 Soda   TP        G3
 ----------------------------------------------------------
-${time.padEnd(9)} ${winnerData.horse.padEnd(12)} ${String(tpSoda).padEnd(8)} ${String(g3Soda).padEnd(8)} ${String(winnerData.tpPnl).padEnd(9)} ${String(winnerData.g3Pnl)}
-</pre>
 `;
 
-sendTelegram(msg);
+rows.forEach(r=>{
+table += `${r.time.padEnd(9)} ${r.horse.padEnd(12)} ${String(r.tpSoda).padEnd(8)} ${String(r.g3Soda).padEnd(8)} ${String(r.tp).padEnd(9)} ${String(r.g3)}\n`;
+});
 
-sentRaces[key]=true;
+table += "</pre>";
+
+const currentHash = JSON.stringify(rows);
+
+if(currentHash !== lastSentHash){
+
+console.log("📤 Sending FULL TABLE");
+
+sendTelegram(table);
+
+lastSentHash = currentHash;
 saveState();
 
 }
 
 }
-
-});
 
 }
 
