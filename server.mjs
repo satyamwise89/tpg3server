@@ -466,3 +466,4 @@ app.listen(PORT,()=>console.log("SERVER RUNNING",PORT));
 }
 
 startServer();
+sendTelegram("TEST MESSAGE");
