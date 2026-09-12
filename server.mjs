@@ -31,7 +31,7 @@ const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 
 let lastSentHash = "";
-let lastRawSentHash = ""; // 👈 Naya variable raw data ke duplicate check ke liye
+let lastRawSentHash = "";
 
 /* ---------- DATABASE ---------- */
 
@@ -62,7 +62,7 @@ compareLog,
 lastScrapeTime,
 lastVenueUpdate,
 lastSentHash,
-lastRawSentHash // 👈 State mein bhi save hoga
+lastRawSentHash
 }));
 }
 
@@ -77,7 +77,7 @@ compareLog=d.compareLog||{};
 lastScrapeTime=d.lastScrapeTime||"";
 lastVenueUpdate=d.lastVenueUpdate||"";
 lastSentHash=d.lastSentHash||"";
-lastRawSentHash=d.lastRawSentHash||""; // 👈 Load hoga
+lastRawSentHash=d.lastRawSentHash||"";
 
 console.log("✅ STATE RESTORED");
 }catch{
@@ -228,10 +228,9 @@ saveState();
 setInterval(updateVenues,600000);
 setInterval(scrapeResults,180000);
 
-/* ---------- RAW DATA TELEGRAM SENDER (NEW) ---------- */
+/* ---------- RAW DATA TELEGRAM SENDER (WITH COUNT) ---------- */
 
 function sendRawDataUpdates(){
-// Time ke hisaab se raceStore ki keys (times) ko sort kar lete hain
 const sortedTimes = Object.keys(raceStore).sort();
 if(sortedTimes.length === 0) return;
 
@@ -245,7 +244,8 @@ rawMsg += `\n⏰ <b>Time: ${time}</b>\n`;
 if(timeData.tp && timeData.tp.horses) {
 rawMsg += `  🔹 <b>TP Panel (Soda: ${timeData.tp.soda})</b>\n`;
 timeData.tp.horses.forEach(h => {
-rawMsg += `     - ${h.name} (PnL: ${h.pnl})\n`;
+const betCount = h.count !== undefined ? h.count : (h.bets !== undefined ? h.bets : 0);
+rawMsg += `     - ${h.name} (PnL: ${h.pnl}, Count: ${betCount})\n`;
 });
 }
 
@@ -253,14 +253,14 @@ rawMsg += `     - ${h.name} (PnL: ${h.pnl})\n`;
 if(timeData.g3 && timeData.g3.horses) {
 rawMsg += `  🔸 <b>G3 Panel (Soda: ${timeData.g3.soda})</b>\n`;
 timeData.g3.horses.forEach(h => {
-rawMsg += `     - ${h.name} (PnL: ${h.pnl})\n`;
+const betCount = h.count !== undefined ? h.count : (h.bets !== undefined ? h.bets : 0);
+rawMsg += `     - ${h.name} (PnL: ${h.pnl}, Count: ${betCount})\n`;
 });
 }
 });
 
 const currentRawHash = JSON.stringify(raceStore);
 
-// Jab bhi naya data aaye ya change ho, tabhi send ho
 if(currentRawHash !== lastRawSentHash){
 console.log("📤 Sending RAW DATA to Telegram");
 sendTelegram(rawMsg);
@@ -399,15 +399,19 @@ if(horses){
 horses.forEach(h=>{
 const n=normalizeHorse(h.name);
 const ex=raceStore[raceTime][panel].horses.find(x=>normalizeHorse(x.name)===n);
-if(ex) ex.pnl=h.pnl;
-else raceStore[raceTime][panel].horses.push(h);
+if(ex){
+ex.pnl=h.pnl;
+if(h.count !== undefined) ex.count = h.count;
+if(h.bets !== undefined) ex.bets = h.bets;
+} else {
+raceStore[raceTime][panel].horses.push(h);
+}
 });
 }
 
 buildComparison();
 saveState();
 
-// 👈 Yahan par naya raw data update trigger hoga jaise hi data aayega
 sendRawDataUpdates();
 
 res.json({status:"ok"});
