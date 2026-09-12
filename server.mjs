@@ -31,6 +31,7 @@ const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 
 let lastSentHash = "";
+let lastRawSentHash = ""; // 👈 Naya variable raw data ke duplicate check ke liye
 
 /* ---------- DATABASE ---------- */
 
@@ -60,7 +61,8 @@ winnerReport,
 compareLog,
 lastScrapeTime,
 lastVenueUpdate,
-lastSentHash
+lastSentHash,
+lastRawSentHash // 👈 State mein bhi save hoga
 }));
 }
 
@@ -75,6 +77,7 @@ compareLog=d.compareLog||{};
 lastScrapeTime=d.lastScrapeTime||"";
 lastVenueUpdate=d.lastVenueUpdate||"";
 lastSentHash=d.lastSentHash||"";
+lastRawSentHash=d.lastRawSentHash||""; // 👈 Load hoga
 
 console.log("✅ STATE RESTORED");
 }catch{
@@ -225,6 +228,47 @@ saveState();
 setInterval(updateVenues,600000);
 setInterval(scrapeResults,180000);
 
+/* ---------- RAW DATA TELEGRAM SENDER (NEW) ---------- */
+
+function sendRawDataUpdates(){
+// Time ke hisaab se raceStore ki keys (times) ko sort kar lete hain
+const sortedTimes = Object.keys(raceStore).sort();
+if(sortedTimes.length === 0) return;
+
+let rawMsg = `<b>📊 ALL RAW RACE DATA (TIME WISE)</b>\n`;
+
+sortedTimes.forEach(time => {
+const timeData = raceStore[time];
+rawMsg += `\n⏰ <b>Time: ${time}</b>\n`;
+
+// TP Panel Data
+if(timeData.tp && timeData.tp.horses) {
+rawMsg += `  🔹 <b>TP Panel (Soda: ${timeData.tp.soda})</b>\n`;
+timeData.tp.horses.forEach(h => {
+rawMsg += `     - ${h.name} (PnL: ${h.pnl})\n`;
+});
+}
+
+// G3 Panel Data
+if(timeData.g3 && timeData.g3.horses) {
+rawMsg += `  🔸 <b>G3 Panel (Soda: ${timeData.g3.soda})</b>\n`;
+timeData.g3.horses.forEach(h => {
+rawMsg += `     - ${h.name} (PnL: ${h.pnl})\n`;
+});
+}
+});
+
+const currentRawHash = JSON.stringify(raceStore);
+
+// Jab bhi naya data aaye ya change ho, tabhi send ho
+if(currentRawHash !== lastRawSentHash){
+console.log("📤 Sending RAW DATA to Telegram");
+sendTelegram(rawMsg);
+lastRawSentHash = currentRawHash;
+saveState();
+}
+}
+
 /* ---------- COMPARISON ---------- */
 
 function buildComparison(){
@@ -310,7 +354,7 @@ let table = `
 <pre>
 🏁 TP + G3 RESULT
 
-Time      Horse         TP Soda   G3 Soda   TP        G3
+Time      Horse       TP Soda   G3 Soda   TP        G3
 ----------------------------------------------------------
 `;
 
@@ -363,6 +407,9 @@ else raceStore[raceTime][panel].horses.push(h);
 buildComparison();
 saveState();
 
+// 👈 Yahan par naya raw data update trigger hoga jaise hi data aayega
+sendRawDataUpdates();
+
 res.json({status:"ok"});
 });
 
@@ -377,7 +424,7 @@ let html=`<h1>TP + G3 Dashboard</h1>
 <table border="1">
 <tr><th>Time</th><th>Horse</th><th>TP Soda</th><th>G3 Soda</th><th>TP</th><th>G3</th></tr>`;
 
-Object.keys(winnerReport).forEach(time=>{
+Object.keys(winnerReport).sort().forEach(time=>{
 const w=winnerReport[time];
 if(!w) return;
 
